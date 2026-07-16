@@ -61,6 +61,12 @@ class FakeSession:
         self.deleted = []
         self.commits = 0
 
+    def __call__(self):
+        return self
+
+    def remove(self):
+        pass
+
     def add(self, obj):
         self.added.append(obj)
 
@@ -192,6 +198,7 @@ def test_register_and_login_response_shapes(client, monkeypatch):
     assert "user" in register_response.json
 
     user = session.added[0]
+    user.is_active = True
     monkeypatch.setattr(auth.User, "query", QueryResult(user), raising=False)
 
     login_response = client.post("/api/auth/login", json={

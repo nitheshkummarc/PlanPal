@@ -11,7 +11,7 @@ Routes/Functions:
 from flask import Blueprint, jsonify
 from app import db
 from app.utils.responses import error_response
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import text
 
 system_bp = Blueprint('system', __name__)
@@ -24,7 +24,7 @@ def health_check():
         db.session.execute(text('SELECT 1'))
         return jsonify({
             'status': 'healthy',
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             'database': 'connected'
         }), 200
     except Exception as e:

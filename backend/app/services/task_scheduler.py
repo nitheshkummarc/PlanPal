@@ -17,7 +17,7 @@ Tasks: Marks expired events inactive every 5 minutes
 
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from app import db
 from app.models import Event
 
@@ -63,7 +63,7 @@ class TaskScheduler:
             with self.app.app_context():
                 expired_events = Event.query.filter(
                     Event.is_active == True,
-                    Event.timestamp < datetime.utcnow()
+                    Event.timestamp < datetime.now(timezone.utc)
                 ).all()
                 
                 count = 0
@@ -73,7 +73,7 @@ class TaskScheduler:
                 
                 if count > 0:
                     db.session.commit()
-                    print(f"Marked {count} events as expired at {datetime.utcnow()}")
+                    print(f"Marked {count} events as expired at {datetime.now(timezone.utc)}")
                 
         except Exception as e:
             print(f"Error marking expired events: {e}")

@@ -24,9 +24,28 @@ Models/Classes:
 """
 
 from app import db
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
+
+
+def _utc_now() -> datetime:
+    """Timezone-aware UTC now. Replaces deprecated datetime.utcnow()."""
+    return datetime.now(timezone.utc)
+
+
+def _utc_iso(dt: datetime | None) -> str | None:
+    """Convert a datetime to a Z-suffixed ISO 8601 UTC string.
+
+    Handles both naive datetimes (assumed UTC) and aware datetimes.
+    Always returns the format '2026-07-15T10:25:08.586945Z'.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        # Legacy naive datetime stored before this fix — assume UTC
+        return dt.isoformat() + 'Z'
+    return dt.isoformat().replace('+00:00', 'Z')
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -41,8 +60,8 @@ class User(db.Model):
     preferences = db.Column(db.JSON)  # Store as JSON array
     role = db.Column(db.String(20), default='user')  # user, admin
     is_active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=_utc_now)
+    updated_at = db.Column(db.DateTime(timezone=True), default=_utc_now, onupdate=_utc_now)
     
     # Relationships
     created_events = db.relationship('Event', foreign_keys='Event.posted_by', backref='creator', lazy='dynamic')
@@ -70,8 +89,8 @@ class User(db.Model):
             'preferences': self.preferences or [],
             'role': self.role,
             'is_active': self.is_active,
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat()
+            'created_at': _utc_iso(self.created_at),
+            'updated_at': _utc_iso(self.updated_at)
         }
 
 class Event(db.Model):
@@ -80,7 +99,7 @@ class Event(db.Model):
     event_id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
-    timestamp = db.Column(db.DateTime, nullable=False)
+    timestamp = db.Column(db.DateTime(timezone=True), nullable=False)
     place = db.Column(db.String(200), nullable=False)
     location = db.Column(db.String(200), nullable=False)  # Detailed location (city, state)
     city = db.Column(db.String(100), nullable=False, index=True)  # Added index for filtering
@@ -91,8 +110,8 @@ class Event(db.Model):
     posted_by = db.Column(UUID(as_uuid=True), db.ForeignKey('users.user_id'), nullable=False)
     max_participants = db.Column(db.Integer)
     current_participants = db.Column(db.Integer, default=0)  # Cache participant count for performance
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=_utc_now)
+    updated_at = db.Column(db.DateTime(timezone=True), default=_utc_now, onupdate=_utc_now)
     is_active = db.Column(db.Boolean, default=True, index=True)  # Added index for filtering
     
     # Relationships
@@ -125,9 +144,9 @@ class Event(db.Model):
             'creator_name': self.creator.name if self.creator else None,
             'title': self.title,
             'description': self.description,
-            'timestamp': self.timestamp.isoformat(),
-            'date': self.timestamp.date().isoformat(),  # Computed from timestamp
-            'time': self.timestamp.time().isoformat(),  # Computed from timestamp
+            'timestamp': _utc_iso(self.timestamp),
+            'date': self.timestamp.date().isoformat(),  # Computed from timestamp (date has no TZ)
+            'time': self.timestamp.time().isoformat(),  # Computed from timestamp (time portion only)
             'place': self.place,
             'location': self.location,
             'city': self.city,
@@ -138,8 +157,8 @@ class Event(db.Model):
             'max_participants': self.max_participants,
             'current_participants': self.current_participants,  # Use cached count for performance
             'is_active': self.is_active,
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat()
+            'created_at': _utc_iso(self.created_at),
+            'updated_at': _utc_iso(self.updated_at)
         }
 
 class Participation(db.Model):
@@ -149,9 +168,9 @@ class Participation(db.Model):
     event_id = db.Column(UUID(as_uuid=True), db.ForeignKey('events.event_id'), nullable=False)
     user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.user_id'), nullable=False)
     status = db.Column(db.String(20), nullable=False, default='interested')  # interested, going
-    joined_at = db.Column(db.DateTime, default=datetime.utcnow)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    joined_at = db.Column(db.DateTime(timezone=True), default=_utc_now)
+    created_at = db.Column(db.DateTime(timezone=True), default=_utc_now)
+    updated_at = db.Column(db.DateTime(timezone=True), default=_utc_now, onupdate=_utc_now)
     
     # Unique constraint to prevent duplicate participations
     __table_args__ = (
@@ -171,9 +190,9 @@ class Participation(db.Model):
             'event_id': str(self.event_id),
             'user_id': str(self.user_id),
             'status': self.status,
-            'joined_at': self.joined_at.isoformat(),
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat()
+            'joined_at': _utc_iso(self.joined_at),
+            'created_at': _utc_iso(self.created_at),
+            'updated_at': _utc_iso(self.updated_at)
         }
 
 class Notification(db.Model):
@@ -186,8 +205,8 @@ class Notification(db.Model):
     title = db.Column(db.String(200), nullable=False)
     message = db.Column(db.Text, nullable=False)
     is_read = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=_utc_now)
+    updated_at = db.Column(db.DateTime(timezone=True), default=_utc_now, onupdate=_utc_now)
     
     # Relationships
     user = db.relationship('User', backref='notifications', lazy='select')
@@ -213,8 +232,8 @@ class Notification(db.Model):
             'title': self.title,
             'message': self.message,
             'is_read': self.is_read,
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat()
+            'created_at': _utc_iso(self.created_at),
+            'updated_at': _utc_iso(self.updated_at)
         }
 
 class Tag(db.Model):
@@ -224,8 +243,8 @@ class Tag(db.Model):
     name = db.Column(db.String(50), unique=True, nullable=False)
     description = db.Column(db.Text)
     color = db.Column(db.String(7))  # Hex color codes
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=_utc_now)
+    updated_at = db.Column(db.DateTime(timezone=True), default=_utc_now, onupdate=_utc_now)
     
     def __repr__(self):
         return f'<Tag {self.name}>'
@@ -236,8 +255,8 @@ class Tag(db.Model):
             'name': self.name,
             'description': self.description,
             'color': self.color,
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat()
+            'created_at': _utc_iso(self.created_at),
+            'updated_at': _utc_iso(self.updated_at)
         }
 
 class UserTag(db.Model):
@@ -245,11 +264,11 @@ class UserTag(db.Model):
     
     user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.user_id'), primary_key=True)
     tag_id = db.Column(UUID(as_uuid=True), db.ForeignKey('tags.tag_id'), primary_key=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=_utc_now)
 
 class EventTag(db.Model):
     __tablename__ = 'event_tags'
     
     event_id = db.Column(UUID(as_uuid=True), db.ForeignKey('events.event_id'), primary_key=True)
     tag_id = db.Column(UUID(as_uuid=True), db.ForeignKey('tags.tag_id'), primary_key=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=_utc_now)

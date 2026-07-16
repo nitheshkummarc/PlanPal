@@ -17,7 +17,7 @@ Methods/Functions (all static):
 
 from app import db
 from app.models import Notification, User, Event
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 
 class NotificationService:
@@ -187,7 +187,7 @@ class NotificationService:
     def clean_old_notifications(days_old=30):
         """Clean up old read notifications"""
         try:
-            cutoff_date = datetime.utcnow() - timedelta(days=days_old)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
             old_notifications = Notification.query.filter(
                 Notification.is_read == True,
                 Notification.created_at < cutoff_date

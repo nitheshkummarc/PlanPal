@@ -33,7 +33,7 @@ import secrets
 import hashlib
 import hmac
 import functools
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from flask import request, jsonify, current_app
 from flask_jwt_extended import get_jwt_identity, verify_jwt_in_request, get_jwt
 from app.models import User
@@ -293,7 +293,7 @@ def log_security_event(event_type, details=None, user_id=None):
     """Log security-related events"""
     try:
         security_log = {
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             'event_type': event_type,
             'user_id': user_id,
             'ip_address': request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr),

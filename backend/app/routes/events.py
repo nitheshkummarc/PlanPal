@@ -24,7 +24,7 @@ from app.models import Event, User, Participation, Tag, EventTag
 from app.services.notification_service import NotificationService
 from app.utils.validators import validate_uuid
 from app.utils.responses import error_response
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import uuid
 
@@ -221,20 +221,19 @@ def get_event_details(event_id):
         # Add creator as first participant if not already in list
         if creator and not creator_already_in_list:
             participants_list.append({
-                'user': creator.to_dict(),
-                'participation': {
-                    'user_id': creator.user_id,
-                    'event_id': event_id,
-                    'status': 'going',  # Creator is always going
-                    'joined_at': event.created_at.isoformat() if event.created_at else None
-                }
+                'user_id': str(creator.user_id),
+                'name': creator.name,
+                'profile_image_url': getattr(creator, 'profile_image_url', None),
+                'status': 'going'
             })
         
         # Add other participants, with creator first if they're in the list
         for participation, user in participants:
             participant_data = {
-                'user': user.to_dict(),
-                'participation': participation.to_dict()
+                'user_id': str(user.user_id),
+                'name': user.name,
+                'profile_image_url': getattr(user, 'profile_image_url', None),
+                'status': participation.status
             }
             
             if user.user_id == event.posted_by:
@@ -398,7 +397,7 @@ def update_event(event_id):
             except ValueError as error:
                 return jsonify({'error': str(error)}), 400
         
-        event.updated_at = datetime.utcnow()
+        event.updated_at = datetime.now(timezone.utc)
         
         db.session.commit()
         
@@ -555,33 +554,6 @@ def get_joined_events():
     except Exception as e:
         return error_response('Failed to fetch joined events', exc=e)
 
-# Keep the old route for backward compatibility
-@events_bp.route('/my-events', methods=['GET'])
-@jwt_required()
-def get_my_events_legacy():
-    try:
-        current_user_id = get_jwt_identity()
-        
-        # Get events created by user
-        created_events = Event.query.filter_by(
-            posted_by=current_user_id,
-            is_active=True
-        ).order_by(Event.timestamp.desc()).all()
-        
-        # Get events user is participating in
-        participated_events = db.session.query(Event).join(Participation).filter(
-            Participation.user_id == current_user_id,
-            Event.is_active == True,
-            Participation.status.in_(['going', 'interested'])
-        ).order_by(Event.timestamp.desc()).all()
-        
-        return jsonify({
-            'created_events': [event.to_dict() for event in created_events],
-            'participated_events': [event.to_dict() for event in participated_events]
-        }), 200
-        
-    except Exception as e:
-        return error_response('Failed to fetch your events', exc=e)
 
 @events_bp.route('/<event_id>/participation_status', methods=['GET'])
 @jwt_required()

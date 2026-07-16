@@ -66,11 +66,17 @@ class Config:
 
 class DevelopmentConfig(Config):
     DEBUG = True
-    # Use Supabase pooler for development - MUST be set in .env
-    SQLALCHEMY_DATABASE_URI = os.environ.get('SUPABASE_DATABASE_URL')
+    # Use Supabase pooler for development, fallback to local SQLite if not set
+    SQLALCHEMY_DATABASE_URI = os.environ.get('SUPABASE_DATABASE_URL') or 'sqlite:///local_dev.db'
     
-    if not SQLALCHEMY_DATABASE_URI:
-        raise ValueError("SUPABASE_DATABASE_URL must be set in .env file")
+    # We remove the import-time raise ValueError so the file can be imported without crashing.
+
+
+class TestingConfig(Config):
+    TESTING = True
+    DEBUG = True
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+
 
 class ProductionConfig(Config):
     DEBUG = False
@@ -81,5 +87,6 @@ class ProductionConfig(Config):
 config = {
     'development': DevelopmentConfig,
     'production': ProductionConfig,
+    'testing': TestingConfig,
     'default': DevelopmentConfig
 }

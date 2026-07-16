@@ -1,5 +1,11 @@
 # PlanPal
 
+![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
+![Flask](https://img.shields.io/badge/Flask-Backend-000000?logo=flask)
+![React](https://img.shields.io/badge/React-Frontend-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-Frontend-3178C6?logo=typescript&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-4169E1?logo=postgresql&logoColor=white)
+
 A community-driven event platform for discovering, organizing, and participating in local events through a secure, full-stack web application.
 
 The project uses a Flask REST API, React frontend, and PostgreSQL/Supabase schema with explicit relationships for users, events, participations, notifications, and tags.
@@ -63,7 +69,7 @@ Key database rules live in `database/init.sql`:
 
 | Layer | Technology |
 | --- | --- |
-| Frontend | React, Vite, Tailwind CSS, Axios, React Router |
+| Frontend | React, TypeScript, Vite, Tailwind CSS, Axios, React Router |
 | Backend | Flask, Flask-JWT-Extended, Flask-Bcrypt, SQLAlchemy |
 | Database | PostgreSQL / Supabase |
 | Tooling | pytest, npm, pip, SQL migration scripts |
