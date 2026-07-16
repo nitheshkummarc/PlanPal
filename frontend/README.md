@@ -29,7 +29,7 @@ flowchart LR
     Axios --> Backend[Flask API]
 ```
 
-The frontend is organized around route-level pages under `src/pages`. Pages call functions from `src/api`, which route all HTTP requests through `src/services/axiosInstance.js`. Shared state lives in React context providers, and reusable UI is grouped under `src/components`.
+The frontend is organized around route-level pages under `src/pages`. Pages call functions from `src/api`, which route all HTTP requests through `src/services/axiosInstance.ts`. Shared state lives in React context providers, and reusable UI is grouped under `src/components`.
 
 ---
 
@@ -102,13 +102,13 @@ npm run lint     # Run ESLint
 Frontend API modules live in `src/api`:
 
 ```text
-authApi.js
-eventsApi.js
-notificationsApi.js
-searchApi.js
-systemApi.js
-tagsApi.js
-usersApi.js
+authApi.ts
+eventsApi.ts
+notificationsApi.ts
+searchApi.ts
+systemApi.ts
+tagsApi.ts
+usersApi.ts
 ```
 
 
