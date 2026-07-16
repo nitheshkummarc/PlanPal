@@ -1,5 +1,5 @@
 /**
- * App.jsx - Main Application Component
+ * App.tsx - Main Application Component
  * 
  * Why: Root component that sets up routing, authentication, theme, and layout
  * 
