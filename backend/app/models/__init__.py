@@ -93,6 +93,12 @@ class User(db.Model):
             'updated_at': _utc_iso(self.updated_at)
         }
 
+    def to_public_dict(self):
+        d = self.to_dict()
+        d.pop('email', None)
+        d.pop('password_hash', None)
+        return d
+
 class Event(db.Model):
     __tablename__ = 'events'
     
@@ -135,7 +141,7 @@ class Event(db.Model):
         self.current_participants = self.participations.filter(
             Participation.status.in_(['going', 'interested'])
         ).count()
-        db.session.commit()
+        db.session.flush()
     
     def to_dict(self):
         return {

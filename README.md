@@ -70,9 +70,10 @@ Key database rules live in `database/init.sql`:
 | Layer | Technology |
 | --- | --- |
 | Frontend | React, TypeScript, Vite, Tailwind CSS, Axios, React Router |
-| Backend | Flask, Flask-JWT-Extended, Flask-Bcrypt, SQLAlchemy |
+| Backend | Flask, Flask-JWT-Extended, Flask-Bcrypt, SQLAlchemy, Flask-Limiter |
 | Database | PostgreSQL / Supabase |
-| Tooling | pytest, npm, pip, SQL migration scripts |
+| DevOps / CI | Docker, Docker Compose, Nginx, GitHub Actions |
+| Tooling | pytest, vitest, npm, pip, SQL migration scripts |
 
 ---
 
@@ -229,6 +230,25 @@ Supabase migration check:
 ```bash
 python scripts/test_supabase_migration.py
 ```
+
+---
+
+## 🐳 Docker Deployment (Production Ready)
+
+The application is fully containerized for production deployment. The architecture includes:
+- A multi-stage **Nginx** container serving the optimized React frontend.
+- A **Gunicorn** WSGI server running the Flask API backend.
+- A **Redis** container for rate-limiting.
+- Automated health (`/api/system/health`) and readiness (`/api/system/ready`) probes.
+
+To run the entire stack locally with Docker Compose:
+
+```bash
+docker compose -f docker-compose.local.yml build
+docker compose -f docker-compose.local.yml up -d
+```
+
+The frontend will be available at `http://localhost:3000` and the API is proxied through Nginx.
 
 ---
 

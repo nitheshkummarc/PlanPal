@@ -149,3 +149,48 @@ def generate_event_slug(title):
     slug = re.sub(r'[^\w\s-]', '', slug)
     slug = re.sub(r'\s+', '-', slug)
     return slug[:50]  # Limit length
+
+def validate_event_title(title):
+    """Validate event title: 1-200 chars, not blank."""
+    if not title or not title.strip():
+        return False, 'Title is required'
+    if len(title) > 200:
+        return False, 'Title must be 200 characters or fewer'
+    return True, None
+
+def validate_event_timestamp(timestamp_str):
+    """Validate event timestamp: valid ISO format, must be in the future."""
+    from datetime import datetime, timezone
+    try:
+        ts = datetime.fromisoformat(timestamp_str)
+    except (ValueError, TypeError):
+        return False, 'Invalid timestamp format. Use ISO format.'
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    if ts <= datetime.now(timezone.utc):
+        return False, 'Event timestamp must be in the future'
+    return True, None
+
+def validate_price(price):
+    """Validate price: must be >= 0 if provided."""
+    if price is None:
+        return True, None
+    try:
+        p = float(price)
+    except (ValueError, TypeError):
+        return False, 'Price must be a number'
+    if p < 0:
+        return False, 'Price must not be negative'
+    return True, None
+
+def validate_max_participants(value):
+    """Validate max_participants: must be > 0 if provided."""
+    if value is None:
+        return True, None
+    try:
+        v = int(value)
+    except (ValueError, TypeError):
+        return False, 'max_participants must be an integer'
+    if v <= 0:
+        return False, 'max_participants must be greater than 0'
+    return True, None

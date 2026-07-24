@@ -83,6 +83,25 @@ class ProductionConfig(Config):
     # Production should always use environment variables
     SQLALCHEMY_DATABASE_URI = os.environ.get('SUPABASE_DATABASE_URL') or Config.SQLALCHEMY_DATABASE_URI
 
+    @classmethod
+    def validate(cls):
+        missing = []
+        if not os.environ.get('SECRET_KEY'):
+            missing.append('SECRET_KEY')
+        if not os.environ.get('JWT_SECRET_KEY'):
+            missing.append('JWT_SECRET_KEY')
+        if not os.environ.get('ENCRYPTION_KEY'):
+            missing.append('ENCRYPTION_KEY')
+        if not os.environ.get('SUPABASE_DATABASE_URL'):
+            missing.append('SUPABASE_DATABASE_URL')
+        
+        allowed_origins = os.environ.get('ALLOWED_ORIGINS')
+        if not allowed_origins or 'localhost' in allowed_origins or '127.0.0.1' in allowed_origins:
+            missing.append('ALLOWED_ORIGINS (must be set and not use default localhost)')
+
+        if missing:
+            raise RuntimeError("Missing or invalid required production environment variables: " + ", ".join(missing))
+
 
 config = {
     'development': DevelopmentConfig,

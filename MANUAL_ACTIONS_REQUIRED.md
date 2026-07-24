@@ -134,3 +134,8 @@ publish Docker images, you will need to add repository secrets:
 
 (Commit numbers ≥2 are filled in as the work lands. Items marked ⚠️ above are
 the only ones that require your action.)
+
+## Docker Verification (Commit 9)
+- [ ] Run `docker compose -f docker-compose.local.yml build` to verify images build
+- [ ] Run `docker compose -f docker-compose.local.yml up` to verify local stack
+- [ ] Verify `/api/system/health` returns 200 through nginx proxy

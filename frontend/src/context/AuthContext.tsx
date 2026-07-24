@@ -26,6 +26,7 @@ import axios from 'axios';
 import type { AppUser } from '../types';
 import type { ContextResponse } from '../types/api';
 import type { ApiError } from '../types/api';
+import { BYPASS_AUTH } from '../config';
 
 // --- State types ---
 
@@ -87,8 +88,7 @@ interface AuthContextValue extends AuthState {
 }
 
 // --- Constants ---
-
-const BYPASS_AUTH = true; // Forced to true for design preview without backend
+// BYPASS_AUTH is imported from ../config (env-gated, defaults to false).
 
 const TEST_USER: AppUser = {
   user_id: '00000000-0000-0000-0000-000000000001',

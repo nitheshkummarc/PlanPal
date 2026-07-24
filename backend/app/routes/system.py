@@ -18,17 +18,28 @@ system_bp = Blueprint('system', __name__)
 
 @system_bp.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint for monitoring"""
+    """Liveness probe — always 200 if the process is running."""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    }), 200
+
+@system_bp.route('/ready', methods=['GET'])
+def readiness_check():
+    """Readiness probe — checks DB connectivity."""
     try:
-        # Test database connection
         db.session.execute(text('SELECT 1'))
         return jsonify({
-            'status': 'healthy',
-            'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
-            'database': 'connected'
+            'status': 'ready',
+            'database': 'connected',
+            'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         }), 200
     except Exception as e:
-        return error_response('Health check failed', exc=e)
+        return jsonify({
+            'status': 'not_ready',
+            'database': 'disconnected',
+            'error': str(e)
+        }), 503
 
 @system_bp.route('/version', methods=['GET'])
 def get_version():

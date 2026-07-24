@@ -23,10 +23,12 @@ from app.utils.supabase_client import supabase_client
 from app.services.notification_service import NotificationService
 from datetime import datetime
 import re
+from app import limiter
 
 auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/register', methods=['POST'])
+@limiter.limit('5/minute')
 def register():
     """
     Register a new user account.
@@ -115,6 +117,7 @@ def register():
         return error_response('Registration failed', exc=e)
 
 @auth_bp.route('/login', methods=['POST'])
+@limiter.limit('5/minute')
 def login():
     try:
         data = request.get_json()
@@ -237,6 +240,7 @@ def update_profile():
 
 @auth_bp.route('/change-password', methods=['POST'])
 @jwt_required()
+@limiter.limit('10/minute')
 def change_password():
     try:
         current_user_id = get_jwt_identity()

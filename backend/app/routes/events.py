@@ -22,7 +22,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
 from app.models import Event, User, Participation, Tag, EventTag
 from app.services.notification_service import NotificationService
-from app.utils.validators import validate_uuid
+from app.utils.validators import validate_uuid, validate_event_title, validate_event_timestamp, validate_price, validate_max_participants
 from app.utils.responses import error_response
 from datetime import datetime, timezone
 import os
@@ -126,6 +126,26 @@ def create_event():
             if not data.get(field):
                 return jsonify({'error': f'{field} is required'}), 400
 
+        # Validate title
+        valid, err = validate_event_title(data.get('title'))
+        if not valid:
+            return jsonify({'error': err}), 400
+
+        # Validate timestamp (must be future)
+        valid, err = validate_event_timestamp(data.get('timestamp'))
+        if not valid:
+            return jsonify({'error': err}), 400
+
+        # Validate price
+        valid, err = validate_price(data.get('price'))
+        if not valid:
+            return jsonify({'error': err}), 400
+
+        # Validate max_participants
+        valid, err = validate_max_participants(data.get('max_participants'))
+        if not valid:
+            return jsonify({'error': err}), 400
+
         # Backward-compatible source type handling
         source_type = (data.get('source_type') or 'text').strip().lower()
         if source_type != 'text':
@@ -139,7 +159,7 @@ def create_event():
         
         # Create event with new schema
         event = Event(
-            posted_by=current_user_id,
+            posted_by=uuid.UUID(current_user_id),
             title=data['title'],
             description=data.get('description'),
             timestamp=event_timestamp,
@@ -167,7 +187,7 @@ def create_event():
         # Auto-join creator to the event
         participation = Participation(
             event_id=event.event_id,
-            user_id=current_user_id,
+            user_id=uuid.UUID(current_user_id),
             status='going'
         )
         db.session.add(participation)
@@ -192,6 +212,9 @@ def create_event():
 @events_bp.route('/<event_id>', methods=['GET'])
 def get_event_details(event_id):
     try:
+        if not validate_uuid(event_id):
+            return jsonify({'error': 'Invalid event ID format'}), 400
+        
         event = Event.query.get(event_id)
         if not event or not event.is_active:
             return jsonify({'error': 'Event not found'}), 404

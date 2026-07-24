@@ -23,6 +23,7 @@ from app import db
 from app.models import Notification, User, Event
 from app.utils.responses import error_response
 from datetime import datetime
+import uuid as _uuid
 
 notifications_bp = Blueprint('notifications', __name__)
 
@@ -80,18 +81,14 @@ def get_notifications():
 @jwt_required()
 def create_notification():
     try:
+        current_user_id = get_jwt_identity()
         data = request.get_json()
         
         # Validate required fields
-        required_fields = ['user_id', 'type', 'title', 'message']
+        required_fields = ['type', 'title', 'message']
         for field in required_fields:
             if not data.get(field):
                 return jsonify({'error': f'{field} is required'}), 400
-        
-        # Validate user exists
-        user = User.query.get(data['user_id'])
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
         
         # Validate event exists if provided
         if data.get('event_id'):
@@ -101,7 +98,7 @@ def create_notification():
         
         # Create notification
         notification = Notification(
-            user_id=data['user_id'],
+            user_id=_uuid.UUID(current_user_id),
             event_id=data.get('event_id'),
             type=data['type'],
             title=data['title'],
