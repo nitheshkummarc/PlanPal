@@ -42,10 +42,11 @@ A deployed full-stack event management platform built with **React, TypeScript, 
 ### 2. Event Search
 ![Event Search](./assets/search.png)
 
-### 3. Event Details & Organizer Controls
+### 3. Event Discovery
 ![Event Details](./assets/eventpage.png)
 
-### 4. Event Discovery
+
+### 4. Event Details & Organizer Controls
 ![Event Discovery](./assets/Eventcard.png)
 
 ---
