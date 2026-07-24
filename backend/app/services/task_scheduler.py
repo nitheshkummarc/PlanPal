@@ -20,6 +20,9 @@ import time
 from datetime import datetime, timezone
 from app import db
 from app.models import Event
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TaskScheduler:
     def __init__(self):
@@ -52,7 +55,7 @@ class TaskScheduler:
                 # Sleep for 5 minutes
                 time.sleep(300)
             except Exception as e:
-                print(f"Scheduler error: {e}")
+                logger.error("Scheduler error: %s", e)
                 time.sleep(60)  # Wait 1 minute on error
     
     def _mark_expired_events(self):
@@ -73,10 +76,10 @@ class TaskScheduler:
                 
                 if count > 0:
                     db.session.commit()
-                    print(f"Marked {count} events as expired at {datetime.now(timezone.utc)}")
+                    logger.info("Marked %d events as expired at %s", count, datetime.now(timezone.utc))
                 
         except Exception as e:
-            print(f"Error marking expired events: {e}")
+            logger.error("Error marking expired events: %s", e)
             db.session.rollback()
 
 scheduler = TaskScheduler()

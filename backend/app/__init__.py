@@ -26,6 +26,8 @@ from flask_mail import Mail
 from config import config  # Using regular config with Supabase settings
 import os
 import logging
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 # Initialize extensions
 db = SQLAlchemy()
@@ -34,12 +36,20 @@ cors = CORS()
 jwt = JWTManager()
 bcrypt = Bcrypt()
 mail = Mail()
+limiter = Limiter(key_func=get_remote_address, storage_uri='memory://')
 
 def create_app(config_name='default'):
     app = Flask(__name__)
     
     # Load configuration
     app.config.from_object(config[config_name])
+    
+    if config_name == 'production':
+        try:
+            config[config_name].validate()
+        except RuntimeError as e:
+            app.logger.error(f"Configuration Error: {str(e)}")
+            raise
     
     # Disable strict slashes to prevent redirects on trailing slashes
     app.url_map.strict_slashes = False
@@ -60,6 +70,10 @@ def create_app(config_name='default'):
     jwt.init_app(app)
     bcrypt.init_app(app)
     mail.init_app(app)
+    limiter.init_app(app)
+    
+    if app.config.get('TESTING'):
+        limiter.enabled = False
     
     # Initialize Supabase client (optional)
     try:

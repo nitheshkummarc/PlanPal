@@ -27,11 +27,12 @@ const axiosInstance = axios.create({
   },
 });
 
-// Inject mock adapter if bypass is enabled
+// Inject mock adapter only when explicitly opted in via env (default off).
+// BYPASS_AUTH must never be true in production builds.
+import { BYPASS_AUTH } from '../config';
 import { mockAdapter } from './mockAdapter';
-const BYPASS_AUTH = true; // Use same flag as AuthContext
 if (BYPASS_AUTH) {
-  axiosInstance.defaults.adapter = mockAdapter as any;
+  axiosInstance.defaults.adapter = mockAdapter;
 }
 
 // Request interceptor to add auth token

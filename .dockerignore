@@ -1,0 +1,14 @@
+.git
+.github
+__pycache__
+*.pyc
+.env
+backend/.env
+backend/.venv
+backend/tests
+frontend
+docs
+assets
+scripts
+*.md
+.zcode

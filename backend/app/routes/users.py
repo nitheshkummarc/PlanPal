@@ -49,17 +49,17 @@ def search_users():
         if len(query) < 2:
             return jsonify({'error': 'Search query must be at least 2 characters'}), 400
         
-        # Search users by name or email
+        # Search users by name or username
         users = User.query.filter(
             db.or_(
                 User.name.ilike(f'%{query}%'),
-                User.email.ilike(f'%{query}%')
+                User.username.ilike(f'%{query}%')
             ),
             User.is_active == True
         ).limit(20).all()
         
         return jsonify({
-            'users': [user.to_dict() for user in users]
+            'users': [user.to_public_dict() for user in users]
         }), 200
         
     except Exception as e:
