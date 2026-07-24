@@ -27,12 +27,10 @@ const axiosInstance = axios.create({
   },
 });
 
-// Inject mock adapter only when explicitly opted in via env (default off).
-// BYPASS_AUTH must never be true in production builds.
+// In production, we do not bypass auth.
 import { BYPASS_AUTH } from '../config';
-import { mockAdapter } from './mockAdapter';
 if (BYPASS_AUTH) {
-  axiosInstance.defaults.adapter = mockAdapter;
+  console.warn("Auth bypass is enabled, but mockAdapter has been removed for production builds.");
 }
 
 // Request interceptor to add auth token
