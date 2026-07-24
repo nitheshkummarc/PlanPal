@@ -26,9 +26,14 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get('SUPABASE_DATABASE_URL')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_pre_ping': True,  # Verify connections before using
-        'pool_recycle': 300,    # Recycle connections after 5 minutes
+        'pool_size': 5,
+        'pool_recycle': 1800,
+        'pool_pre_ping': True,
+        'pool_timeout': 30
     }
+    
+    # Redis Configuration (for rate limiting)
+    RATELIMIT_STORAGE_URI = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
     
     # Supabase API Configuration
     SUPABASE_URL = os.environ.get('SUPABASE_URL')
@@ -96,8 +101,8 @@ class ProductionConfig(Config):
             missing.append('SUPABASE_DATABASE_URL')
         
         allowed_origins = os.environ.get('ALLOWED_ORIGINS')
-        if not allowed_origins or 'localhost' in allowed_origins or '127.0.0.1' in allowed_origins:
-            missing.append('ALLOWED_ORIGINS (must be set and not use default localhost)')
+        if not allowed_origins or 'localhost:5173' in allowed_origins or '127.0.0.1:5173' in allowed_origins:
+            missing.append('ALLOWED_ORIGINS (must be set and not use default dev localhost)')
 
         if missing:
             raise RuntimeError("Missing or invalid required production environment variables: " + ", ".join(missing))
