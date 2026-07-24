@@ -37,6 +37,7 @@ from datetime import datetime, timedelta, timezone
 from flask import request, jsonify, current_app
 from flask_jwt_extended import get_jwt_identity, verify_jwt_in_request, get_jwt
 from app.models import User
+from app import db
 import re
 import bleach
 
@@ -137,7 +138,7 @@ def require_auth(optional=False):
                         verify_jwt_in_request(optional=True)
                         current_user_id = get_jwt_identity()
                         if current_user_id:
-                            current_user = User.query.get(current_user_id)
+                            current_user = db.session.get(User, current_user_id)
                             if current_user and current_user.is_active:
                                 kwargs['current_user'] = current_user
                             else:
@@ -154,7 +155,7 @@ def require_auth(optional=False):
                     if not current_user_id:
                         return jsonify({'error': 'Authentication required'}), 401
                     
-                    current_user = User.query.get(current_user_id)
+                    current_user = db.session.get(User, current_user_id)
                     if not current_user:
                         return jsonify({'error': 'User not found'}), 404
                     
@@ -187,7 +188,7 @@ def admin_required(f):
             if not current_user_id:
                 return jsonify({'error': 'Authentication required'}), 401
             
-            current_user = User.query.get(current_user_id)
+            current_user = db.session.get(User, current_user_id)
             if not current_user:
                 return jsonify({'error': 'User not found'}), 404
             
@@ -318,7 +319,7 @@ def get_current_user():
         if not current_user_id:
             return None
         
-        current_user = User.query.get(current_user_id)
+        current_user = db.session.get(User, current_user_id)
         if current_user and current_user.is_active:
             return current_user
         
@@ -352,7 +353,7 @@ def check_permissions(user, resource_type, action, resource_id=None):
         elif action in ['update', 'delete'] and resource_id:
             # Check if user owns the event
             from app.models import Event
-            event = Event.query.get(resource_id)
+            event = db.session.get(Event, resource_id)
             return event and str(event.organizer_id) == str(user.user_id)
     
     elif resource_type == 'user':
@@ -366,7 +367,7 @@ def check_permissions(user, resource_type, action, resource_id=None):
         if action in ['read', 'update'] and resource_id:
             # Users can only access their own notifications
             from app.models import Notification
-            notification = Notification.query.get(resource_id)
+            notification = db.session.get(Notification, resource_id)
             return notification and str(notification.user_id) == str(user.user_id)
     
     # Default deny

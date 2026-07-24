@@ -74,7 +74,7 @@ class EventService:
                 raise Exception("Event not found")
             
             # Check if user is creator or admin
-            user = User.query.get(user_id)
+            user = db.session.get(User, user_id)
             if event.posted_by != user_id and user.role != 'admin':
                 raise Exception("Unauthorized to update this event")
             
@@ -102,7 +102,7 @@ class EventService:
                 raise Exception("Event not found")
             
             # Check if user is creator or admin
-            user = User.query.get(user_id)
+            user = db.session.get(User, user_id)
             if event.posted_by != user_id and user.role != 'admin':
                 raise Exception("Unauthorized to delete this event")
             
@@ -136,7 +136,7 @@ class EventService:
             ).all()
             
             # Get creator details
-            creator = User.query.get(event.posted_by)
+            creator = db.session.get(User, event.posted_by)
             
             # Build participants list with creator first (if not already in participants)
             participants_list = []
@@ -233,7 +233,7 @@ class EventService:
     def get_recommended_events(user_id, limit=10):
         """Get recommended events based on user's tags and location"""
         try:
-            user = User.query.get(user_id)
+            user = db.session.get(User, user_id)
             if not user:
                 return []
             
@@ -338,7 +338,7 @@ class EventService:
             participation.status = 'cancelled'
             
             # Create notification for event creator
-            event = Event.query.get(event_id)
+            event = db.session.get(Event, event_id)
             notification = Notification(
                 user_id=event.posted_by,
                 type='event_leave',
@@ -390,13 +390,13 @@ class EventService:
                 raise Exception("Event not found")
             
             # Check if user is creator or admin
-            user = User.query.get(user_id)
+            user = db.session.get(User, user_id)
             if event.posted_by != user_id and user.role != 'admin':
                 raise Exception("Unauthorized to modify event tags")
             
             for tag_id in tag_ids:
                 # Check if tag exists
-                tag = Tag.query.get(tag_id)
+                tag = db.session.get(Tag, tag_id)
                 if not tag:
                     continue
                 
@@ -425,7 +425,7 @@ class EventService:
                 raise Exception("Event not found")
             
             # Check if user is creator or admin
-            user = User.query.get(user_id)
+            user = db.session.get(User, user_id)
             if event.posted_by != user_id and user.role != 'admin':
                 raise Exception("Unauthorized to modify event tags")
             

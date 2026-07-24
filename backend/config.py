@@ -82,6 +82,7 @@ class TestingConfig(Config):
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
     SQLALCHEMY_ENGINE_OPTIONS = {}
+    RATELIMIT_STORAGE_URI = 'memory://'
 
 
 class ProductionConfig(Config):

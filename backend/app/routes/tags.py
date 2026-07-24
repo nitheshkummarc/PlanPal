@@ -62,7 +62,7 @@ def create_tag():
     """Create a new tag (admin only)"""
     try:
         current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
+        user = db.session.get(User, current_user_id)
         
         if not user or user.role != 'admin':
             return jsonify({'error': 'Admin access required'}), 403
@@ -104,7 +104,7 @@ def get_tag(tag_id):
         if not validate_uuid(tag_id):
             return jsonify({'error': 'Invalid tag ID format'}), 400
 
-        tag = Tag.query.get(tag_id)
+        tag = db.session.get(Tag, tag_id)
         if not tag:
             return jsonify({'error': 'Tag not found'}), 404
 
@@ -121,12 +121,12 @@ def update_tag(tag_id):
     """Update a tag (admin only)"""
     try:
         current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
+        user = db.session.get(User, current_user_id)
         
         if not user or user.role != 'admin':
             return jsonify({'error': 'Admin access required'}), 403
         
-        tag = Tag.query.get(tag_id)
+        tag = db.session.get(Tag, tag_id)
         if not tag:
             return jsonify({'error': 'Tag not found'}), 404
         
@@ -163,12 +163,12 @@ def delete_tag(tag_id):
     """Delete a tag (admin only)"""
     try:
         current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
+        user = db.session.get(User, current_user_id)
         
         if not user or user.role != 'admin':
             return jsonify({'error': 'Admin access required'}), 403
         
-        tag = Tag.query.get(tag_id)
+        tag = db.session.get(Tag, tag_id)
         if not tag:
             return jsonify({'error': 'Tag not found'}), 404
         

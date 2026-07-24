@@ -36,6 +36,9 @@ def test_production_config_passes_when_all_set(monkeypatch):
     monkeypatch.setenv('SUPABASE_DATABASE_URL', 'postgresql://user:pass@db:5432/db')
     monkeypatch.setenv('ALLOWED_ORIGINS', 'https://example.com')
 
+    from config import config
+    config['production'].SQLALCHEMY_DATABASE_URI = 'postgresql://user:pass@db:5432/db'
+
     app = create_app('production')
     assert app.config['DEBUG'] is False
 

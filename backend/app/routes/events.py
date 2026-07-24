@@ -215,7 +215,7 @@ def get_event_details(event_id):
         if not validate_uuid(event_id):
             return jsonify({'error': 'Invalid event ID format'}), 400
         
-        event = Event.query.get(event_id)
+        event = db.session.get(Event, event_id)
         if not event or not event.is_active:
             return jsonify({'error': 'Event not found'}), 404
         
@@ -281,7 +281,7 @@ def join_event(event_id):
         current_user_id = get_jwt_identity()
         
         # Check if event exists
-        event = Event.query.get(event_id)
+        event = db.session.get(Event, event_id)
         if not event or not event.is_active:
             return jsonify({'error': 'Event not found'}), 404
         
@@ -311,7 +311,7 @@ def join_event(event_id):
         event.update_participant_count()
         
         # Get user info for notifications
-        user = User.query.get(current_user_id)
+        user = db.session.get(User, current_user_id)
         
         # Create notification for event creator
         NotificationService.notify_new_participant(event, participation)
@@ -346,7 +346,7 @@ def leave_event(event_id):
             return jsonify({'error': 'Not joined to this event'}), 404
         
         # Check if user is the event creator
-        event = Event.query.get(event_id)
+        event = db.session.get(Event, event_id)
         if str(event.posted_by) == current_user_id:
             return jsonify({'error': 'Event creator cannot leave the event'}), 400
         
@@ -377,7 +377,7 @@ def update_event(event_id):
         data = request.get_json()
         
         # Check if event exists
-        event = Event.query.get(event_id)
+        event = db.session.get(Event, event_id)
         if not event or not event.is_active:
             return jsonify({'error': 'Event not found'}), 404
         
@@ -445,11 +445,11 @@ def delete_event(event_id):
     try:
         current_user_id = get_jwt_identity()
 
-        event = Event.query.get(event_id)
+        event = db.session.get(Event, event_id)
         if not event or not event.is_active:
             return jsonify({'error': 'Event not found'}), 404
 
-        current_user = User.query.get(current_user_id)
+        current_user = db.session.get(User, current_user_id)
         if str(event.posted_by) != current_user_id and (not current_user or current_user.role != 'admin'):
             return jsonify({'error': 'You can only delete your own events'}), 403
 
@@ -586,7 +586,7 @@ def get_participation_status(event_id):
         current_user_id = get_jwt_identity()
         
         # Check if event exists
-        event = Event.query.get(event_id)
+        event = db.session.get(Event, event_id)
         if not event or not event.is_active:
             return jsonify({'error': 'Event not found'}), 404
         

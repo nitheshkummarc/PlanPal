@@ -24,7 +24,7 @@ users_bp = Blueprint('users', __name__)
 def get_profile():
     try:
         current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
+        user = db.session.get(User, current_user_id)
         
         if not user:
             return jsonify({'error': 'User not found'}), 404
@@ -73,7 +73,7 @@ def get_user(user_id):
         if not validate_uuid(user_id):
             return jsonify({'error': 'Invalid user ID format'}), 400
         
-        user = User.query.get(user_id)
+        user = db.session.get(User, user_id)
         if not user or not user.is_active:
             return jsonify({'error': 'User not found'}), 404
         

@@ -85,6 +85,11 @@ class FakeSession:
     def query(self, *_args):
         return QueryResult([])
 
+    def get(self, model, _id):
+        if hasattr(model, 'query') and hasattr(model.query, 'get'):
+            return model.query.get(_id)
+        return None
+
 
 @pytest.fixture()
 def app():

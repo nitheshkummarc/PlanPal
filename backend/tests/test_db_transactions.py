@@ -25,7 +25,7 @@ def transaction_client():
 def test_update_participant_count_does_not_commit(transaction_client):
     app, u1_id, u2_id, event_id = transaction_client
     with app.app_context():
-        event = Event.query.get(event_id)
+        event = db.session.get(Event, event_id)
         # Add a participation
         p = Participation(event_id=event_id, user_id=u2_id, status='going')
         db.session.add(p)
@@ -37,7 +37,7 @@ def test_update_participant_count_does_not_commit(transaction_client):
         # Rollback should undo both the participation and the count
         db.session.rollback()
         
-        event = Event.query.get(event_id)
+        event = db.session.get(Event, event_id)
         # Re-calculate to see state in db
         event.update_participant_count()
         assert event.current_participants == 0
@@ -45,7 +45,7 @@ def test_update_participant_count_does_not_commit(transaction_client):
 def test_join_then_leave_event(transaction_client):
     app, u1_id, u2_id, event_id = transaction_client
     with app.app_context():
-        event = Event.query.get(event_id)
+        event = db.session.get(Event, event_id)
         p = Participation(event_id=event_id, user_id=u2_id, status='going')
         db.session.add(p)
         db.session.commit()

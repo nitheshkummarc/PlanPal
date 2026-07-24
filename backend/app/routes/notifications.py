@@ -92,7 +92,7 @@ def create_notification():
         
         # Validate event exists if provided
         if data.get('event_id'):
-            event = Event.query.get(data['event_id'])
+            event = db.session.get(Event, data['event_id'])
             if not event:
                 return jsonify({'error': 'Event not found'}), 404
         
@@ -124,7 +124,7 @@ def mark_notification_read(notification_id):
         current_user_id = get_jwt_identity()
         
         # Get notification
-        notification = Notification.query.get(notification_id)
+        notification = db.session.get(Notification, notification_id)
         if not notification:
             return jsonify({'error': 'Notification not found'}), 404
         
@@ -152,7 +152,7 @@ def mark_notification_unread(notification_id):
         current_user_id = get_jwt_identity()
 
         # Get notification
-        notification = Notification.query.get(notification_id)
+        notification = db.session.get(Notification, notification_id)
         if not notification:
             return jsonify({'error': 'Notification not found'}), 404
 
@@ -202,7 +202,7 @@ def delete_notification(notification_id):
         current_user_id = get_jwt_identity()
         
         # Get notification
-        notification = Notification.query.get(notification_id)
+        notification = db.session.get(Notification, notification_id)
         if not notification:
             return jsonify({'error': 'Notification not found'}), 404
         
