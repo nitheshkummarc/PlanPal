@@ -64,22 +64,25 @@ class TaskScheduler:
             if not self.app:
                 return
             with self.app.app_context():
-                expired_events = Event.query.filter(
-                    Event.is_active == True,
-                    Event.timestamp < datetime.now(timezone.utc)
-                ).all()
-                
-                count = 0
-                for event in expired_events:
-                    event.is_active = False
-                    count += 1
-                
-                if count > 0:
-                    db.session.commit()
-                    logger.info("Marked %d events as expired at %s", count, datetime.now(timezone.utc))
+                try:
+                    expired_events = Event.query.filter(
+                        Event.is_active == True,
+                        Event.timestamp < datetime.now(timezone.utc)
+                    ).all()
+                    
+                    count = 0
+                    for event in expired_events:
+                        event.is_active = False
+                        count += 1
+                    
+                    if count > 0:
+                        db.session.commit()
+                        logger.info("Marked %d events as expired at %s", count, datetime.now(timezone.utc))
+                except Exception as db_err:
+                    db.session.rollback()
+                    raise db_err
                 
         except Exception as e:
             logger.error("Error marking expired events: %s", e)
-            db.session.rollback()
 
 scheduler = TaskScheduler()

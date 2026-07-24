@@ -36,7 +36,7 @@ cors = CORS()
 jwt = JWTManager()
 bcrypt = Bcrypt()
 mail = Mail()
-limiter = Limiter(key_func=get_remote_address, storage_uri='memory://')
+limiter = Limiter(key_func=get_remote_address)
 
 def create_app(config_name='default'):
     app = Flask(__name__)
