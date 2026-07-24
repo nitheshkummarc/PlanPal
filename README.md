@@ -53,7 +53,7 @@ A deployed full-stack event management platform built with **React, TypeScript, 
 
 ## System Architecture
 
-![PlanPal System Architecture](./assets/architecture.png)
+![PlanPal System Architecture](./assets/architecture.png?v=2)
 
 The React client communicates with the Flask REST API through an Axios-based API layer. The backend validates requests and enforces authentication and authorization across its route blueprints, while service-layer logic handles application workflows and persists data through SQLAlchemy models backed by PostgreSQL. A background `TaskScheduler` handles periodic event expiration independently of request processing.
 
@@ -80,7 +80,7 @@ The backend uses an explicit allowed-origins list when credentials are enabled, 
 
 ## ER Diagram
 
-![Event Management System ER Diagram](./assets/ER%20diagram.png)
+![Event Management System ER Diagram](./assets/ER%20diagram.png?v=2)
 
 Key database rules defined in `database/supabase_migration.sql`:
 - One participation per user per event
