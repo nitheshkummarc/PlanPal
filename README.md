@@ -7,7 +7,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-Frontend-3178C6?logo=typescript&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-4169E1?logo=postgresql&logoColor=white)
 
-A full-stack event management platform built with **React, TypeScript, Flask, PostgreSQL, and Supabase**, designed around secure authorization, relational data integrity, event participation workflows, and production-ready deployment.
+A deployed full-stack event management platform built with **React, TypeScript, Flask, and PostgreSQL on Supabase**, featuring JWT authentication, role- and ownership-based authorization, relational integrity constraints, event participation workflows, automated testing, and CI/CD.
 
 [Architecture](#system-architecture) • [Engineering Highlights](#engineering-at-a-glance) • [API](#api-surface) • [Run Locally](#quick-start)
 
@@ -15,35 +15,38 @@ A full-stack event management platform built with **React, TypeScript, Flask, Po
 
 ## Live Demo
 
-**Application:** [https://your-deployment-url.com](https://your-deployment-url.com)  
-**API Health:** [https://api.your-deployment-url.com/api/system/health](https://api.your-deployment-url.com/api/system/health)  
-*(Add demo credentials here if applicable)*
+**Frontend (Vercel):** [https://planpal-silk.vercel.app](https://planpal-silk.vercel.app)  
+**Backend API Health (Render):** [https://planpal-backend-wcsc.onrender.com/api/system/health](https://planpal-backend-wcsc.onrender.com/api/system/health)
 
 ---
 
 ## Engineering at a Glance
 
-- **68 automated tests** — 41 backend + 27 frontend
-- JWT authentication with role- and ownership-based authorization
-- JWT-bound notification ownership preventing forged user IDs
-- PostgreSQL relational model with UUIDs, constraints, composite keys, and cascades
-- Transaction-safe event participation workflow
-- Rate-limited authentication endpoints with configurable distributed storage (Redis)
-- Production environment validation and secret isolation
-- Separate liveness (`/health`) and database-readiness (`/ready`) probes
-- Dockerized React + Flask deployment behind Nginx
-- GitHub Actions CI for testing and production builds
+- **44 REST API endpoints** covering authentication, events, participation, notifications, tags, users, and system health
+- **68 automated tests** — 41 backend tests with pytest and 27 frontend tests
+- **JWT authentication and authorization** with role- and ownership-based access control
+- **PostgreSQL relational model** using UUIDs, foreign keys, composite keys, uniqueness constraints, and cascades
+- **Rate limiting** on authentication endpoints (5 requests/minute per IP) using Flask-Limiter
+- **Background maintenance** through a threaded `TaskScheduler` that handles event expiration outside request processing
+- **CI/CD workflow** with GitHub Actions for automated validation and Vercel/Render for deployment
+- **Explicit CORS allow-list** restricted to approved production origins
+- **Health and readiness endpoints** for deployment health checks
 
 ---
 
 ## Product Preview
 
-*(Replace these placeholders with real screenshots or a GIF of your application)*
-- **Event Discovery** 
-- **Event Details**
-- **Create Event**
-- **Dashboard**
-- **Notifications**
+### 1. Dashboard & Upcoming Events
+![Dashboard and Upcoming Events](./assets/dashboard.png)
+
+### 2. Event Search
+![Event Search](./assets/search.png)
+
+### 3. Event Details & Organizer Controls
+![Event Details](./assets/eventpage.png)
+
+### 4. Event Discovery
+![Event Discovery](./assets/Eventcard.png)
 
 ---
 
@@ -51,23 +54,26 @@ A full-stack event management platform built with **React, TypeScript, Flask, Po
 
 ![PlanPal System Architecture](./assets/architecture.png)
 
-The React client handles route-based screens for authentication, event discovery, event creation/editing, notifications, search, dashboard, profile, and calendar views. Backend routes validate requests, enforce authorization, and persist data through SQLAlchemy models backed by PostgreSQL.
+The React client communicates with the Flask REST API through an Axios-based API layer. The backend validates requests and enforces authentication and authorization across its route blueprints, while service-layer logic handles application workflows and persists data through SQLAlchemy models backed by PostgreSQL. A background `TaskScheduler` handles periodic event expiration independently of request processing.
 
 ---
 
 ## Key Engineering Decisions
 
 **Schema-driven integrity**
-Core rules such as unique participation, tag joins, and cascade behavior are encoded directly in the database schema (`database/supabase_migration.sql`). Application code follows those constraints rather than duplicating them only in the UI.
+Core integrity rules such as unique event participation, tag relationships, and cascade behavior are enforced at the database layer rather than relying solely on application or UI validation.
+
+**Layered Authorization**
+Protected operations require JWT authentication and enforce role- or resource-ownership checks on the backend. Client-side route restrictions are treated as UI behavior rather than a security boundary.
 
 **Background Maintenance**
 A threaded `TaskScheduler` runs periodically to mark expired events inactive, decoupling cleanup operations from request-time logic.
 
 **Safe Error Responses & Validation**
-API payloads are validated against Zod schemas on the frontend before transmission. The backend validates requests and returns client-safe error messages while logging internal exceptions server-side, avoiding leaking raw exception text.
+API payloads are validated against Zod schemas on the frontend before transmission. The backend independently validates requests and returns client-safe error messages while logging internal exceptions server-side without exposing raw exception details.
 
 **Explicit CORS Allow-list**
-The backend uses a strictly configured allowed-origins list when credentials are enabled, avoiding the unsafe combination of wildcard origins and credentialed requests.
+The backend uses an explicit allowed-origins list when credentials are enabled, avoiding wildcard origins for credentialed requests.
 
 ---
 
@@ -79,7 +85,7 @@ Key database rules defined in `database/supabase_migration.sql`:
 - One participation per user per event
 - Event and user tags use composite primary keys
 - Event tags and participations cascade when an event is deleted
-- Notifications keep nullable event references
+- Notification event references are nullable and use `ON DELETE SET NULL`
 - Event `source_type` is constrained to valid schema values
 
 ---
@@ -90,9 +96,9 @@ Key database rules defined in `database/supabase_migration.sql`:
 | --- | --- |
 | Frontend | React, TypeScript, Vite, Vanilla CSS, Axios, React Router, Zod |
 | Backend | Python 3.11, Flask, Flask-JWT-Extended, Werkzeug Security, Flask-CORS, SQLAlchemy |
-| Database | PostgreSQL / Supabase |
-| Infrastructure | Docker, Nginx, Redis (optional rate-limit storage) |
-| Tooling | pytest, npm, pip, GitHub Actions CI |
+| Database | PostgreSQL (Supabase) |
+| Infrastructure | Docker (Local Dev), Vercel (Frontend Hosting), Render (Backend PaaS) |
+| Tooling | pytest, npm, pip, GitHub Actions |
 
 ---
 
@@ -110,9 +116,9 @@ Key database rules defined in `database/supabase_migration.sql`:
 ```bash
 cd backend
 python -m venv .venv
-.venv\Scripts\activate
+source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
 pip install -r requirements.txt
-copy .env.example .env
+cp .env.example .env       # On Windows use: copy .env.example .env
 python run.py
 ```
 
@@ -121,19 +127,19 @@ Expected API URL: `http://localhost:5000`
 
 ### 2. Database
 
-Run these SQL files against your Supabase project in this exact order:
+Run the migration SQL against your Supabase project to initialize the schema manually.
 
 ```text
 database/supabase_migration.sql
-database/supabase_rls_policies.sql
 ```
+*(Note: Database access is mediated exclusively through the Flask backend, where authentication and authorization are enforced before database operations; privileged Supabase credentials are never exposed to the client).*
 
 ### 3. Frontend
 
 ```bash
 cd frontend
 npm install
-copy .env.example .env
+cp .env.example .env       # On Windows use: copy .env.example .env
 npm run dev
 ```
 
@@ -148,7 +154,7 @@ Expected frontend URL: `http://localhost:5173`
 | Backend | 41 tests passing |
 | Frontend | 27 tests passing |
 | Frontend production build | Passing |
-| CI | GitHub Actions |
+| GitHub Actions CI | Passing |
 
 **Run Backend Tests:**
 ```bash
@@ -171,9 +177,9 @@ npm run build
 | Auth | register, login, profile, change password |
 | Events | list, create, detail, update, delete, join, leave, participation status |
 | Notifications | list, create, mark read, delete |
-| Tags | list, detail, create/update/delete for admins |
+| Tags | list, detail, create, update, delete (admin-protected mutations) |
 | Users | current profile, user detail |
-| System | health and readiness probes (`/api/system/health`, `/api/system/ready`) |
+| System | health and readiness endpoints (`/api/system/health`, `/api/system/ready`) |
 
 *Most protected routes require a JWT access token in the `Authorization: Bearer <token>` header.*
 
@@ -194,7 +200,7 @@ backend/
 
 database/
   supabase_migration.sql
-  supabase_rls_policies.sql
+  supabase_rls_policies.sql      Optional/legacy RLS policy definitions
 
 frontend/
   src/
