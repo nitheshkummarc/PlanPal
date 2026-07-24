@@ -79,14 +79,29 @@ export const searchApi = {
   },
 
   // Get search suggestions (fallback)
-  getSearchSuggestions: async (query: string, type: string = 'all'): Promise<SearchResponse> => {
+  getSearchSuggestions: async (query: string, type: string = 'all'): Promise<any> => {
     try {
       const response = await axiosInstance.get<SearchResponse>('/api/search/', {
         params: { q: query, type, limit: 5 }
       });
-      return response.data;
+      
+      const suggestions = [];
+      const results = response.data.results || {};
+      
+      if (results.events) {
+        results.events.forEach((event: AppEvent) => {
+          suggestions.push({ type: 'event', id: event.event_id, title: event.title, subtitle: event.place });
+        });
+      }
+      if (results.users) {
+        results.users.forEach((user: AppUser) => {
+          suggestions.push({ type: 'user', id: user.user_id, name: user.name, subtitle: `@${user.username}` });
+        });
+      }
+      
+      return { suggestions };
     } catch {
-      return { query, results: {} };
+      return { suggestions: [] };
     }
   },
 
