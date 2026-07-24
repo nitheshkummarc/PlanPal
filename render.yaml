@@ -10,7 +10,7 @@ services:
       - key: FLASK_ENV
         value: production
       - key: ALLOWED_ORIGINS
-        value: https://planpal.vercel.app # Change this to your actual Vercel frontend URL
+        value: https://planpal-silk.vercel.app
       - key: SUPABASE_DATABASE_URL
         sync: false
       - key: SUPABASE_URL
