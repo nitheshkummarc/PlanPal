@@ -6,18 +6,7 @@ This document outlines the high-level architecture, design decisions, and data f
 
 PlanPal+ follows a containerized, decoupled architecture separating the client-side rendering from the server-side business logic and data persistence.
 
-```mermaid
-graph TD;
-    Client[Web Browser] -->|HTTP/HTTPS| Nginx[Nginx Reverse Proxy];
-    
-    subgraph Docker Compose Network
-        Nginx -->|Route /api/*| Backend[Flask Backend API];
-        Nginx -->|Route /*| Frontend[React Frontend];
-        Backend <-->|Cache & Sessions| Redis[(Redis Cache)];
-    end
-    
-    Backend <-->|SQLAlchemy TCP/6543| Supabase[(Supabase PostgreSQL)];
-```
+![PlanPal System Architecture](../assets/architecture.png?v=2)
 
 ## 2. Component Deep Dive
 
@@ -31,13 +20,13 @@ graph TD;
 ### 2.2 Backend (Flask)
 - **Framework:** Python Flask provides a lightweight, unopinionated WSGI framework.
 - **Authentication:** `flask-jwt-extended` handles JWT (JSON Web Token) generation and validation. Tokens are stored securely and verified on protected routes.
-- **Security:** Passwords are never stored in plaintext. They are hashed using `scrypt` (via Werkzeug Security) with a work factor designed to deter brute-force attacks.
+- **Security:** Passwords are never stored in plaintext. They are hashed using `bcrypt` (via Flask-Bcrypt) with a work factor designed to deter brute-force attacks.
 - **Task Scheduling:** A background daemon thread handles periodic maintenance, such as expiring past events automatically.
 
 ### 2.3 Database Layer (Supabase / PostgreSQL)
-- **Hosting:** Fully managed PostgreSQL hosted on Supabase (Mumbai Region for ultra-low latency).
+- **Hosting:** Fully managed PostgreSQL hosted on Supabase.
 - **ORM:** SQLAlchemy maps Python objects to database tables, preventing SQL injection and simplifying complex relational queries.
-- **Connection Pooling:** We leverage SQLAlchemy's `QueuePool` in conjunction with Supabase's Transaction Pooler (PgBouncer/Supavisor on port 6543) to guarantee extreme connection stability and sub-10ms query times.
+- **Connection Pooling:** We leverage SQLAlchemy's `QueuePool` in conjunction with Supabase's Transaction Pooler to manage database connections efficiently.
 
 ### 2.4 Infrastructure & Routing (Nginx)
 Nginx sits at the edge of our Docker network. It serves two critical functions:
@@ -49,7 +38,7 @@ Nginx sits at the edge of our Docker network. It serves two critical functions:
 1. The user fills out the registration form on the React frontend.
 2. React sends a `POST` request to `/api/auth/register` with a JSON payload.
 3. Nginx receives the request on port 80 and proxies it to the Backend container on port 5000.
-4. Flask validates the payload, hashes the password using `scrypt`, and attempts to create a new User model.
+4. Flask validates the payload, hashes the password using `bcrypt`, and attempts to create a new User model.
 5. SQLAlchemy requests a connection from its `QueuePool`.
 6. The connection pooler (Supavisor) authenticates the TCP connection to the PostgreSQL instance.
 7. The record is inserted. If the email is unique, a 201 Created response is sent back, containing a fresh JWT.

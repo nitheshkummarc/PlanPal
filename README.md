@@ -96,7 +96,7 @@ Key database rules defined in `database/supabase_migration.sql`:
 | Layer | Technology |
 | --- | --- |
 | Frontend | React, TypeScript, Vite, Vanilla CSS, Axios, React Router, Zod |
-| Backend | Python 3.11, Flask, Flask-JWT-Extended, Werkzeug Security, Flask-CORS, SQLAlchemy |
+| Backend | Python 3.11, Flask, Flask-JWT-Extended, Flask-Bcrypt, Flask-CORS, SQLAlchemy |
 | Database | PostgreSQL (Supabase) |
 | Infrastructure | Docker (Local Dev), Vercel (Frontend Hosting), Render (Backend PaaS) |
 | Tooling | pytest, npm, pip, GitHub Actions |
