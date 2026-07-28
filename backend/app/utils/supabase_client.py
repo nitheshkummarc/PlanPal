@@ -53,7 +53,17 @@ class SupabaseClient:
                 self._logger.warning("Supabase URL or Key not provided. Some features may not work.")
                 return None
             
+            # Workaround for Render injecting HTTP_PROXY which breaks supabase-py initialization
+            proxy_env = {}
+            for k in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
+                if k in os.environ:
+                    proxy_env[k] = os.environ.pop(k)
+                    
             self._client = create_client(supabase_url, supabase_key)
+            
+            # Restore proxy env vars
+            for k, v in proxy_env.items():
+                os.environ[k] = v
             
             app.supabase = self._client
             self._logger.info("Supabase client initialized successfully")
