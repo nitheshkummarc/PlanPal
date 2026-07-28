@@ -37,13 +37,15 @@ const Events = () => {
   const {
     data: eventsData,
     loading: eventsLoading,
-    execute: fetchEvents
+    execute: fetchEvents,
+    reset: resetEventsData
   } = useApi(searchApi.searchEvents);
 
   const {
     data: allEventsData,
     loading: allEventsLoading,
-    execute: fetchAllEvents
+    execute: fetchAllEvents,
+    reset: resetAllEventsData
   } = useApi(eventsApi.getAllEvents);
 
   const {
@@ -72,12 +74,13 @@ const Events = () => {
     setSearchParams(params);
   }, [debouncedSearchQuery, filters, setSearchParams]);
 
+  const hasSearchQuery = debouncedSearchQuery && debouncedSearchQuery.trim() !== '';
+  const hasFilters = selectedTags.length > 0 || filters.location || filters.date_from || filters.date_to;
+  const isSearching = hasSearchQuery || hasFilters;
+
   const loadEvents = async () => {
     try {
-      const hasSearchQuery = debouncedSearchQuery && debouncedSearchQuery.trim() !== '';
-      const hasFilters = selectedTags.length > 0 || filters.location || filters.date_from || filters.date_to;
-
-      if (hasSearchQuery || hasFilters) {
+      if (isSearching) {
         const searchParamsObj: any = {
           limit: 50,
           location: filters.location,
@@ -93,6 +96,7 @@ const Events = () => {
 
         await fetchEvents(debouncedSearchQuery || '', searchParamsObj);
       } else {
+        resetEventsData();
         const eventParams = {
           per_page: 50,
           sort_by: filters.sort_by || 'date',
@@ -132,9 +136,13 @@ const Events = () => {
       category: 'all',
       sort_by: 'date'
     });
+    resetEventsData();
   };
 
-  const events = (eventsData as any)?.results?.events || (eventsData as any)?.events || (allEventsData as any)?.events || [];
+  const events = isSearching
+    ? ((eventsData as any)?.results?.events || [])
+    : ((allEventsData as any)?.events || []);
+    
   const tags = (tagsData as any)?.tags || [];
   const isLoading = eventsLoading || allEventsLoading;
 

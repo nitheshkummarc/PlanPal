@@ -30,14 +30,12 @@ def unified_search():
     try:
         query = request.args.get('q', '').strip()
         search_type = request.args.get('type', 'all')  # all, events, users, tags
-        limit = request.args.get('limit', 10, type=int)
+        limit = request.args.get('limit', 50, type=int)
         tag_ids = request.args.get('tag_ids', '').strip()
         location = request.args.get('location', '').strip()
         sort_by = request.args.get('sort_by', 'relevance')
-        
-        # Allow search with tags even without query
-        if not query and not tag_ids:
-            return jsonify({'error': 'Search query or tags are required'}), 400
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
         
         results = {}
         
@@ -85,6 +83,12 @@ def unified_search():
                         Event.place.ilike(f'%{location}%')
                     )
                 )
+
+            # Add date filtering
+            if date_from:
+                event_query = event_query.filter(Event.timestamp >= datetime.fromisoformat(date_from))
+            if date_to:
+                event_query = event_query.filter(Event.timestamp <= datetime.fromisoformat(date_to))
             
             # Apply sorting
             if sort_by == 'date':
