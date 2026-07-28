@@ -50,10 +50,8 @@ def unified_search():
         
         if search_type in ['all', 'events']:
             # Search events
-            current_time = datetime.now(timezone.utc)
             event_query = Event.query.filter(
-                Event.is_active == True,
-                Event.timestamp >= current_time
+                Event.is_active == True
             )
             
             # Add text search if query provided
