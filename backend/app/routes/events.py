@@ -293,6 +293,15 @@ def join_event(event_id):
         
         if existing_participation:
             return jsonify({'error': 'Already joined this event'}), 400
+            
+        # Check if event has already passed
+        now = datetime.now(timezone.utc)
+        event_time = event.timestamp
+        if event_time.tzinfo is None:
+            event_time = event_time.replace(tzinfo=timezone.utc)
+            
+        if event_time < now:
+            return jsonify({'error': 'Cannot join an event that has already passed'}), 400
         
         # Check if event has max participants limit
         if event.max_participants and event.current_participants >= event.max_participants:

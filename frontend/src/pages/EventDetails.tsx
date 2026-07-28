@@ -197,9 +197,10 @@ const EventDetails = () => {
 
   const isOwner = user?.user_id === event.posted_by || user?.user_id === event.created_by?.user_id;
   const isParticipant = participationStatus?.status === 'going' || participationStatus?.status === 'interested';
-  const canJoin = user && !isOwner && !isParticipant && (event.status === 'upcoming' || !event.status);
+  const isEventPast = new Date(event.timestamp) < new Date();
+  const canJoin = user && !isOwner && !isParticipant && !isEventPast && (event.status === 'upcoming' || !event.status);
   const canLeave = user && isParticipant && !isOwner;
-  const canEdit = user && isOwner;
+  const canEdit = user && isOwner && !isEventPast;
   const canDelete = user && (isOwner || (user as any).role === 'admin');
   const isEventFull = event.max_participants && typeof event.current_participants === 'number' && event.current_participants >= event.max_participants;
 
@@ -395,6 +396,8 @@ const EventDetails = () => {
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                     <span className="font-medium text-green-600 dark:text-green-400">You're participating in this event</span>
                   </div>
+                ) : isEventPast ? (
+                  <span>This event has already passed</span>
                 ) : event.status === 'upcoming' || !event.status ? (
                   <span>Join this event to participate</span>
                 ) : (

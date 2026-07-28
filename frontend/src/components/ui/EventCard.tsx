@@ -55,6 +55,9 @@ const EventCard = ({ event, onClick }: EventCardProps) => {
     }
   };
 
+  const isPast = (event.timestamp || event.date_time) ? new Date(event.timestamp || event.date_time || '') < new Date() : false;
+  const displayStatus = isPast ? 'completed' : (event.status || 'upcoming');
+
   return (
     <div
       className="bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 cursor-pointer border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600"
@@ -65,8 +68,8 @@ const EventCard = ({ event, onClick }: EventCardProps) => {
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white line-clamp-2 flex-1 mr-2">
             {event.title}
           </h3>
-          <span className={`px-2 py-1 rounded-full text-xs font-medium flex-shrink-0 ${getStatusColor(event.status || 'upcoming')}`}>
-            {event.status || 'upcoming'}
+          <span className={`px-2 py-1 rounded-full text-xs font-medium flex-shrink-0 ${getStatusColor(displayStatus)}`}>
+            {displayStatus}
           </span>
         </div>
 
