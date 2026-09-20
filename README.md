@@ -173,17 +173,20 @@ npm run build
 
 ## API Surface
 
-| Area | Endpoints |
-| --- | --- |
-| Auth | register, login, profile, change password |
-| Events | list, create, detail, update, delete, join, leave, participation status |
-| Notifications | list, create, mark read, delete |
-| Tags | list, detail, create, update, delete (admin-protected mutations) |
-| Users | current profile, user detail |
-| System | health and readiness endpoints (`/api/system/health`, `/api/system/ready`) |
+44 REST endpoints across 7 route groups: 4 core resources (Events, Notifications, Tags, Users) plus Auth, Search, and System.
 
-*Most protected routes require a JWT access token in the `Authorization: Bearer <token>` header.*
+| Resource | Base Path | Endpoints | Description |
+|---|---|---|---|
+| Events | `/api/events` | 11 | CRUD, join/leave, participation status, my/joined events, status update |
+| Notifications | `/api/notifications` | 12 | CRUD, mark read/unread, unread count, notification types, push subscribe/unsubscribe |
+| Tags | `/api/tags` | 7 | CRUD, search, popular tags (admin-protected mutations) |
+| Users | `/api/users` | 3 | Current profile, user search, user detail |
+| Auth | `/api/auth` | 7 | Register, login, logout, token refresh, profile get/update, change password |
+| Search | `/api/search` | 1 | Cross-resource search |
+| System | `/api/system` | 3 | Health, readiness, version |
+| **Total** | | **44** | 20 GET · 11 POST · 7 PUT · 6 DELETE |
 
+*Most protected routes require a JWT access token in the `Authorization: Bearer <token>` header. Full function-level documentation is in [`docs/ROUTE_DOCUMENTATION.md`](docs/ROUTE_DOCUMENTATION.md).*
 ---
 
 ## Repository Layout
