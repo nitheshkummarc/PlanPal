@@ -145,7 +145,8 @@ const Notifications = () => {
     ...n,
     id: n.id || n.notification_id
   }));
-  const unreadCount = notifications.filter((n: any) => !n.is_read).length;
+  // Backend total across all pages; fall back to counting the current page
+  const unreadCount = (notificationsData as any)?.unread_count ?? notifications.filter((n: any) => !n.is_read).length;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">

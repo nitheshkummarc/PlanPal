@@ -18,7 +18,10 @@
 // Read once at module load. Coerce to a strict boolean so consumers can't
 // accidentally compare against the raw string.
 const rawBypass = import.meta.env?.VITE_BYPASS_AUTH ?? (typeof process !== 'undefined' ? process.env.VITE_BYPASS_AUTH : undefined);
-export const BYPASS_AUTH: boolean = rawBypass === 'true';
+// Never active in a production build, even if the variable is set by mistake
+// (e.g. copied into the Vercel environment).
+const isProductionBuild = import.meta.env?.PROD === true;
+export const BYPASS_AUTH: boolean = rawBypass === 'true' && !isProductionBuild;
 
 /**
  * True when the app is running under the Vite/Vitest test runner.

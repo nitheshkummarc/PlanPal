@@ -5,7 +5,12 @@ import {
   validateEmail,
   validatePassword,
   validateUsername,
-  validateRequired
+  validateName,
+  validateRequired,
+  EMAIL_MESSAGE,
+  PASSWORD_MESSAGE,
+  USERNAME_MESSAGE,
+  NAME_MESSAGE
 } from '../../utils/validators';
 import { LoadingButton } from '../../components/ui/Loading';
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
@@ -41,26 +46,29 @@ const Register = () => {
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
+    // Same rules and messages as the backend (see utils/validators.ts)
     if (!validateRequired(formData.name)) {
       newErrors.name = 'Full name is required';
+    } else if (!validateName(formData.name)) {
+      newErrors.name = NAME_MESSAGE;
     }
 
     if (!validateRequired(formData.username)) {
       newErrors.username = 'Username is required';
     } else if (!validateUsername(formData.username)) {
-      newErrors.username = 'Username must be 3-20 characters and contain only letters, numbers, and underscores';
+      newErrors.username = USERNAME_MESSAGE;
     }
 
     if (!validateRequired(formData.email)) {
       newErrors.email = 'Email is required';
     } else if (!validateEmail(formData.email)) {
-      newErrors.email = 'Please enter a valid email address';
+      newErrors.email = EMAIL_MESSAGE;
     }
 
     if (!validateRequired(formData.password)) {
       newErrors.password = 'Password is required';
     } else if (!validatePassword(formData.password)) {
-      newErrors.password = 'Password must be at least 8 characters with uppercase, lowercase, and number';
+      newErrors.password = PASSWORD_MESSAGE;
     }
 
     if (!validateRequired(formData.confirmPassword)) {
@@ -246,11 +254,11 @@ const Register = () => {
                 />
                 <label htmlFor="acceptTerms" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                   I agree to the{' '}
-                  <Link to="/terms" className="text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300">
+                  <Link to="/terms" target="_blank" className="text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300">
                     Terms and Conditions
                   </Link>{' '}
                   and{' '}
-                  <Link to="/privacy" className="text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300">
+                  <Link to="/privacy" target="_blank" className="text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300">
                     Privacy Policy
                   </Link>
                 </label>

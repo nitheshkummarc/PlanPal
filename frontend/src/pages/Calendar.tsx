@@ -4,6 +4,7 @@ import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, EyeIcon } from '@h
 import { eventsApi } from '../api/eventsApi';
 import { LoadingSpinner } from '../components/ui/Loading';
 import { formatDate, formatTime } from '../utils/dateUtils';
+import { onEventsChanged } from '../utils/helpers';
 import type { AppEvent } from '../types';
 
 const Calendar = () => {
@@ -15,23 +16,12 @@ const Calendar = () => {
 
   useEffect(() => {
     loadUserEvents();
-  }, [currentDate]);
 
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'eventUpdated') {
-        loadUserEvents();
-        localStorage.removeItem('eventUpdated');
-      }
-    };
+    // Reload when events change in this tab or another tab (no polling).
+    // Re-subscribed per month so the handler always loads the month on screen.
+    const unsubscribe = onEventsChanged(loadUserEvents);
 
-    const handleEventUpdate = () => {
-      loadUserEvents();
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('eventUpdated', handleEventUpdate);
-
+    // Also refresh when the user comes back to this tab
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         loadUserEvents();
@@ -39,21 +29,11 @@ const Calendar = () => {
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    const intervalId = setInterval(() => {
-      const updateFlag = localStorage.getItem('eventUpdated');
-      if (updateFlag) {
-        loadUserEvents();
-        localStorage.removeItem('eventUpdated');
-      }
-    }, 500);
-
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('eventUpdated', handleEventUpdate);
+      unsubscribe();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      clearInterval(intervalId);
     };
-  }, []);
+  }, [currentDate]);
 
   const loadUserEvents = async () => {
     try {
@@ -63,8 +43,9 @@ const Calendar = () => {
       const allEvents = [...((myEventsRes as any).events || []), ...((joinedEventsRes as any).events || [])];
       const uniqueEvents = Array.from(new Map(allEvents.map((e: any) => [e.event_id, e])).values());
 
-      const startDate = new Date(Date.UTC(currentDate.getFullYear(), currentDate.getMonth(), 1));
-      const endDate = new Date(Date.UTC(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59, 999));
+      // Local month boundaries, matching the local-date calendar grid
+      const startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+      const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59, 999);
 
       const filteredEvents = uniqueEvents.filter((event: any) => {
         const eventDate = new Date(event.timestamp);

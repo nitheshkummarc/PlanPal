@@ -91,5 +91,7 @@ describe('AuthContext', () => {
     expect(tokenService.clearTokens).toHaveBeenCalled();
     expect(result.current.isAuthenticated).toBe(false);
     expect(result.current.user).toBeNull();
+    // Route guards show a spinner while loading; it must not stay stuck after logout
+    expect(result.current.loading).toBe(false);
   });
 });

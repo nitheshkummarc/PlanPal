@@ -45,6 +45,9 @@ class QueryResult:
     def limit(self, *_args):
         return self
 
+    def options(self, *_args):
+        return self
+
     def paginate(self, page=1, per_page=20, error_out=False):
         return SimpleNamespace(
             items=self.value or [],
@@ -85,7 +88,7 @@ class FakeSession:
     def query(self, *_args):
         return QueryResult([])
 
-    def get(self, model, _id):
+    def get(self, model, _id, **_kwargs):
         if hasattr(model, 'query') and hasattr(model.query, 'get'):
             return model.query.get(_id)
         return None
@@ -300,6 +303,8 @@ def test_search_with_uuid_tag_filter(client, monkeypatch):
     monkeypatch.setattr(search.Event, "query", QueryResult([event]), raising=False)
     monkeypatch.setattr(search.User, "query", QueryResult([]), raising=False)
     monkeypatch.setattr(search.Tag, "query", QueryResult([]), raising=False)
+    # No real database in these contract tests: serialize without the tag lookup
+    monkeypatch.setattr(search, "serialize_events", lambda events: [e.to_dict() for e in events])
 
     response = client.get(f"/api/search/?type=events&tag_ids={tag_id}")
 

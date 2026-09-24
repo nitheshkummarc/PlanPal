@@ -5,9 +5,8 @@
  */
 
 import axiosInstance from '../services/axiosInstance';
+import { tokenService } from '../services/tokenService';
 import type { AppUser } from '../types';
-import type { ApiError } from '../types/api';
-import axios from 'axios';
 
 interface LoginCredentials {
   email: string;
@@ -57,10 +56,6 @@ interface MessageResponse {
   message: string;
 }
 
-interface RefreshResponse {
-  access_token: string;
-}
-
 export const authApi = {
   register: async (userData: RegisterData): Promise<AuthResponse> => {
     const response = await axiosInstance.post<AuthResponse>('/api/auth/register', userData);
@@ -72,16 +67,11 @@ export const authApi = {
     return response.data;
   },
 
+  // Revokes the access token (sent in the header) and the refresh token (sent in the body).
+  // Token refresh itself is handled by the axios interceptor (services/axiosInstance.ts).
   logout: async (): Promise<MessageResponse> => {
-    const response = await axiosInstance.post<MessageResponse>('/api/auth/logout');
-    return response.data;
-  },
-
-  refresh: async (refreshToken: string): Promise<RefreshResponse> => {
-    const response = await axiosInstance.post<RefreshResponse>('/api/auth/refresh', {}, {
-      headers: {
-        'Authorization': `Bearer ${refreshToken}`
-      }
+    const response = await axiosInstance.post<MessageResponse>('/api/auth/logout', {
+      refresh_token: tokenService.getRefreshToken()
     });
     return response.data;
   },

@@ -8,7 +8,7 @@ Routes/Functions:
 - get_version(): GET /api/system/version - API version and build date
 """
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, current_app
 from app import db
 from app.utils.responses import error_response
 from datetime import datetime, timezone
@@ -35,10 +35,12 @@ def readiness_check():
             'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         }), 200
     except Exception as e:
+        # Log details server-side; don't expose DB error text to callers
+        current_app.logger.error('Readiness check failed: %s', e)
         return jsonify({
             'status': 'not_ready',
             'database': 'disconnected',
-            'error': str(e)
+            'error': 'Database unavailable'
         }), 503
 
 @system_bp.route('/version', methods=['GET'])

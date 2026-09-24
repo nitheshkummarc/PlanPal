@@ -1,22 +1,23 @@
--- Supabase Migration Script for PlanPal+
--- Run this in the Supabase SQL editor
+-- PlanPal database schema
+-- Works on Supabase (run it in the SQL editor) and on plain PostgreSQL
+-- (docker-compose.local.yml mounts it as an init script).
+-- Keep in sync with backend/app/models/__init__.py.
 
 -- Enable necessary extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Users table (modified for Supabase Auth integration)
+-- Users table (PlanPal uses its own JWT auth; passwords are bcrypt hashes)
 CREATE TABLE IF NOT EXISTS users (
     user_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     username VARCHAR(100) UNIQUE NOT NULL,
-    password_hash TEXT, -- Keep for custom auth, can be null if using Supabase Auth
+    password_hash TEXT NOT NULL,
     bio TEXT,
     profile_image_url VARCHAR(500),
     preferences JSONB DEFAULT '[]',
     role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'admin')),
     is_active BOOLEAN DEFAULT TRUE,
-    auth_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE, -- Link to Supabase Auth
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -94,12 +95,18 @@ CREATE TABLE IF NOT EXISTS event_tags (
     PRIMARY KEY (event_id, tag_id)
 );
 
+-- JWT ids revoked at logout (rows can be deleted once expires_at has passed)
+CREATE TABLE IF NOT EXISTS revoked_tokens (
+    jti VARCHAR(36) PRIMARY KEY,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_revoked_tokens_expires_at ON revoked_tokens(expires_at);
+
 -- Indexes for better performance (same as original but with better naming)
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
-CREATE INDEX IF NOT EXISTS idx_users_auth_user_id ON users(auth_user_id);
 
 CREATE INDEX IF NOT EXISTS idx_events_posted_by ON events(posted_by);
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);

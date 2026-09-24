@@ -6,22 +6,20 @@
 
 import axiosInstance from '../services/axiosInstance';
 import type { AppNotification } from '../types';
+import type { Pagination } from '../types/api';
 
 interface NotificationParams {
   page?: number;
-  per_page?: number;
+  per_page?: number;            // 1-100, default 20
   unread_only?: boolean;
+  filter?: 'all' | 'read' | 'unread' | string;
   [key: string]: string | number | boolean | undefined;
 }
 
 interface NotificationListResponse {
   notifications: AppNotification[];
-  pagination?: {
-    page: number;
-    per_page: number;
-    total: number;
-    total_pages: number;
-  };
+  pagination?: Pagination;
+  unread_count?: number;        // unread across all pages
 }
 
 interface NotificationResponse {
@@ -35,14 +33,6 @@ interface MessageResponse {
 
 interface UnreadCountResponse {
   unread_count: number;
-}
-
-interface PushSubscription {
-  endpoint: string;
-  keys: {
-    p256dh: string;
-    auth: string;
-  };
 }
 
 interface NotificationTypesResponse {
@@ -89,18 +79,6 @@ export const notificationsApi = {
   // Get unread notification count
   getUnreadCount: async (): Promise<UnreadCountResponse> => {
     const response = await axiosInstance.get<UnreadCountResponse>('/api/notifications/unread_count');
-    return response.data;
-  },
-
-  // Subscribe to push notifications
-  subscribePush: async (subscription: PushSubscription): Promise<MessageResponse> => {
-    const response = await axiosInstance.post<MessageResponse>('/api/notifications/push/subscribe', subscription);
-    return response.data;
-  },
-
-  // Unsubscribe from push notifications
-  unsubscribePush: async (): Promise<MessageResponse> => {
-    const response = await axiosInstance.delete<MessageResponse>('/api/notifications/push/unsubscribe');
     return response.data;
   },
 

@@ -1,205 +1,133 @@
 """
 notification_service.py - Notification Business Logic Service
 
-Why: Creates and sends notifications to users for various event activities
+Why: Creates notifications for event activity in one consistent way
+
+Transaction rule: these helpers only ADD notifications to the current session;
+they never commit. The calling route commits once, so a notification is saved
+atomically with the change that triggered it (join, leave, update, delete...).
 
 Methods/Functions (all static):
-- create_notification(): Create single notification for user
-- notify_event_participants(): Send notification to all event participants
+- create_notification(): Add a single notification for a user
+- notify_event_participants(): Notify all participants of an event
 - notify_new_participant(): Notify event creator when someone joins
 - notify_user_joined_event(): Confirm to user they joined event
 - notify_participant_left(): Notify creator when someone leaves
 - notify_event_update(): Notify participants about event changes
-- notify_event_reminder(): Send reminder before event (hours_before parameter)
-- notify_event_cancelled(): Notify all about cancellation
-- clean_old_notifications(): Delete old read notifications (30+ days)
+- notify_event_cancelled(): Notify participants that the event was deleted
+- format_event_time(): Event time as text (times are stored and shown in UTC)
 """
 
 from app import db
-from app.models import Notification, User, Event
-from datetime import datetime, timedelta, timezone
-import logging
+from app.models import Notification
+
 
 class NotificationService:
-    """Service for creating and managing notifications"""
-    
+    """Service for creating notifications"""
+
+    @staticmethod
+    def format_event_time(event):
+        """e.g. 'September 30, 2026 at 12:30 PM UTC'.
+
+        Notifications are plain text, so the timezone is stated explicitly;
+        the frontend shows the event itself in the viewer's local time.
+        """
+        return event.timestamp.strftime('%B %d, %Y at %I:%M %p') + ' UTC'
+
     @staticmethod
     def create_notification(user_id, notification_type, title, message, event_id=None):
-        """Create a new notification for a user"""
-        try:
-            notification = Notification(
-                user_id=user_id,
-                event_id=event_id,
-                type=notification_type,
-                title=title,
-                message=message
-            )
-            db.session.add(notification)
-            db.session.commit()
-            return notification
-        except Exception as e:
-            db.session.rollback()
-            logging.error(f"Error creating notification: {str(e)}")
-            return None
-    
+        """Add a notification to the current session.
+
+        Does not commit: the calling route commits once, so the notification is
+        saved atomically with the change that triggered it (e.g. a join).
+        """
+        notification = Notification(
+            user_id=user_id,
+            event_id=event_id,
+            type=notification_type,
+            title=title,
+            message=message
+        )
+        db.session.add(notification)
+        return notification
+
     @staticmethod
     def notify_event_participants(event, notification_type, title, message, exclude_creator=False):
-        """Send notification to all participants of an event"""
-        try:
-            participants = event.participations
-            created_count = 0
-            
-            for participation in participants:
-                # Skip event creator if requested
-                if exclude_creator and participation.user_id == event.posted_by:
-                    continue
-                    
-                notification = NotificationService.create_notification(
-                    user_id=participation.user_id,
-                    notification_type=notification_type,
-                    title=title,
-                    message=message,
-                    event_id=event.event_id
-                )
-                if notification:
-                    created_count += 1
-            
-            return created_count
-        except Exception as e:
-            logging.error(f"Error notifying event participants: {str(e)}")
-            return 0
-    
+        """Add a notification for every participant of an event. Returns the count."""
+        created_count = 0
+        for participation in event.participations:
+            # Skip event creator if requested
+            if exclude_creator and participation.user_id == event.posted_by:
+                continue
+            NotificationService.create_notification(
+                user_id=participation.user_id,
+                notification_type=notification_type,
+                title=title,
+                message=message,
+                event_id=event.event_id
+            )
+            created_count += 1
+        return created_count
+
     @staticmethod
     def notify_new_participant(event, new_participant):
         """Notify event creator about new participant"""
-        try:
-            if str(event.posted_by) == str(new_participant.user_id):
-                return  # Don't notify creator about themselves
-                
-            title = f"New participant joined your event"
-            message = f"{new_participant.user.name} has joined your event '{event.title}'"
-            
-            return NotificationService.create_notification(
-                user_id=event.posted_by,
-                notification_type='new_participant',
-                title=title,
-                message=message,
-                event_id=event.event_id
-            )
-        except Exception as e:
-            logging.error(f"Error creating new participant notification: {str(e)}")
-            return None
-    
+        if str(event.posted_by) == str(new_participant.user_id):
+            return None  # Don't notify creator about themselves
+
+        return NotificationService.create_notification(
+            user_id=event.posted_by,
+            notification_type='new_participant',
+            title='New participant joined your event',
+            message=f"{new_participant.user.name} has joined your event '{event.title}'",
+            event_id=event.event_id
+        )
+
     @staticmethod
     def notify_user_joined_event(event, user):
         """Notify user that they successfully joined an event"""
-        try:
-            title = f"Successfully joined event"
-            message = f"You have successfully joined '{event.title}' scheduled for {event.timestamp.strftime('%B %d, %Y at %I:%M %p')}."
-            
-            return NotificationService.create_notification(
-                user_id=user.user_id,
-                notification_type='event_joined',
-                title=title,
-                message=message,
-                event_id=event.event_id
-            )
-        except Exception as e:
-            logging.error(f"Error creating user joined event notification: {str(e)}")
-            return None
-    
+        return NotificationService.create_notification(
+            user_id=user.user_id,
+            notification_type='event_joined',
+            title='Successfully joined event',
+            message=f"You have successfully joined '{event.title}' scheduled for "
+                    f"{NotificationService.format_event_time(event)}.",
+            event_id=event.event_id
+        )
+
     @staticmethod
     def notify_participant_left(event, left_participant):
         """Notify event creator about participant leaving"""
-        try:
-            if str(event.posted_by) == str(left_participant.user_id):
-                return  # Don't notify creator about themselves
-                
-            title = f"Participant left your event"
-            message = f"{left_participant.user.name} has left your event '{event.title}'"
-            
-            return NotificationService.create_notification(
-                user_id=event.posted_by,
-                notification_type='participant_left',
-                title=title,
-                message=message,
-                event_id=event.event_id
-            )
-        except Exception as e:
-            logging.error(f"Error creating participant left notification: {str(e)}")
-            return None
-    
+        if str(event.posted_by) == str(left_participant.user_id):
+            return None  # Don't notify creator about themselves
+
+        return NotificationService.create_notification(
+            user_id=event.posted_by,
+            notification_type='participant_left',
+            title='Participant left your event',
+            message=f"{left_participant.user.name} has left your event '{event.title}'",
+            event_id=event.event_id
+        )
+
     @staticmethod
     def notify_event_update(event):
-        """Notify all participants about event updates"""
-        try:
-            title = f"Event Updated: {event.title}"
-            message = f"The event '{event.title}' has been updated. Check the latest details!"
-            
-            return NotificationService.notify_event_participants(
-                event=event,
-                notification_type='event_update',
-                title=title,
-                message=message,
-                exclude_creator=True
-            )
-        except Exception as e:
-            logging.error(f"Error creating event update notification: {str(e)}")
-            return 0
-    
-    @staticmethod
-    def notify_event_reminder(event, hours_before=24):
-        """Create event reminder notifications"""
-        try:
-            title = f"Event Reminder: {event.title}"
-            message = f"Don't forget! Your event '{event.title}' starts in {hours_before} hours at {event.place}."
-            
-            return NotificationService.notify_event_participants(
-                event=event,
-                notification_type='event_reminder',
-                title=title,
-                message=message,
-                exclude_creator=False
-            )
-        except Exception as e:
-            logging.error(f"Error creating event reminder notification: {str(e)}")
-            return 0
-    
+        """Notify all participants (except the creator) about event updates"""
+        return NotificationService.notify_event_participants(
+            event=event,
+            notification_type='event_update',
+            title=f'Event Updated: {event.title}',
+            message=f"The event '{event.title}' has been updated. Check the latest details!",
+            exclude_creator=True
+        )
+
     @staticmethod
     def notify_event_cancelled(event):
-        """Notify all participants about event cancellation"""
-        try:
-            title = f"Event Cancelled: {event.title}"
-            message = f"Unfortunately, the event '{event.title}' scheduled for {event.timestamp.strftime('%B %d, %Y')} has been cancelled."
-            
-            return NotificationService.notify_event_participants(
-                event=event,
-                notification_type='event_cancelled',
-                title=title,
-                message=message,
-                exclude_creator=False
-            )
-        except Exception as e:
-            logging.error(f"Error creating event cancellation notification: {str(e)}")
-            return 0
-    
-    @staticmethod
-    def clean_old_notifications(days_old=30):
-        """Clean up old read notifications"""
-        try:
-            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
-            old_notifications = Notification.query.filter(
-                Notification.is_read == True,
-                Notification.created_at < cutoff_date
-            ).all()
-            
-            count = len(old_notifications)
-            for notification in old_notifications:
-                db.session.delete(notification)
-            
-            db.session.commit()
-            return count
-        except Exception as e:
-            db.session.rollback()
-            logging.error(f"Error cleaning old notifications: {str(e)}")
-            return 0
+        """Notify participants (except the creator) that the event was deleted"""
+        return NotificationService.notify_event_participants(
+            event=event,
+            notification_type='event_cancelled',
+            title=f'Event Cancelled: {event.title}',
+            message=f"Unfortunately, the event '{event.title}' scheduled for "
+                    f"{NotificationService.format_event_time(event)} has been cancelled.",
+            exclude_creator=True
+        )

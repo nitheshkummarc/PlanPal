@@ -10,25 +10,21 @@ export type ContextResponse<T> =
   | { success: true; data: T }
   | { success: false; error: string };
 
-/** Paginated API response wrapper */
-export interface PaginatedResponse<T> {
-  items: T[];
-  pagination: {
-    page: number;
-    per_page: number;
-    total: number;
-    total_pages: number;
-  };
+/** Pagination block returned by list endpoints (events, notifications) */
+export interface Pagination {
+  page: number;
+  per_page: number;
+  total: number;
+  pages: number;
 }
 
 /**
- * Standard API error shape from backend.
- *
- * Canonical field is `error` — verified by grepping all Flask route handlers.
- * Every inline error uses `jsonify({'error': '...'})`, and the shared
- * `error_response()` utility in responses.py also uses `{'error': message}`.
+ * Standard API error shape from backend: every error response is
+ * { success: false, error: "<message>" } (route errors, 404/405/429/500, JWT errors).
  * The `message` key only appears in success responses (e.g., 'Login successful').
+ * Use getApiErrorMessage() in utils/helpers.ts to read it.
  */
 export interface ApiError {
+  success?: false;
   error: string;
 }

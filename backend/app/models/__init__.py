@@ -21,6 +21,10 @@ Models/Classes:
   
 - UserTag: User-Tag association (user_id, tag_id)
 - EventTag: Event-Tag association (event_id, tag_id)
+- RevokedToken: JWT ids revoked at logout (jti, expires_at)
+
+Constraints and ON DELETE rules match database/init.sql, so a database created
+by db.create_all() behaves the same as one created from the SQL file.
 """
 
 from app import db
@@ -73,6 +77,7 @@ class User(db.Model):
         db.Index('idx_user_username', 'username'),
         db.Index('idx_user_active', 'is_active'),
         db.Index('idx_user_role', 'role'),
+        db.CheckConstraint("role IN ('user', 'admin')", name='ck_users_role'),
     )
     
     def __repr__(self):
@@ -113,7 +118,7 @@ class Event(db.Model):
     is_paid = db.Column(db.Boolean, default=False)
     price = db.Column(db.Numeric(10, 2))
     source_type = db.Column(db.String(20), nullable=False)  # 'poster' or 'text'
-    posted_by = db.Column(UUID(as_uuid=True), db.ForeignKey('users.user_id'), nullable=False)
+    posted_by = db.Column(UUID(as_uuid=True), db.ForeignKey('users.user_id', ondelete='CASCADE'), nullable=False)
     max_participants = db.Column(db.Integer)
     current_participants = db.Column(db.Integer, default=0)  # Cache participant count for performance
     created_at = db.Column(db.DateTime(timezone=True), default=_utc_now)
@@ -125,7 +130,9 @@ class Event(db.Model):
     
     # Add composite indexes for better query performance
     __table_args__ = (
-        db.UniqueConstraint('title', 'posted_by', name='unique_event_constraint'),
+        # Same organiser can reuse a title at a different time (e.g. a weekly meetup)
+        db.UniqueConstraint('title', 'timestamp', 'posted_by', name='unique_event_constraint'),
+        db.CheckConstraint("source_type IN ('text')", name='ck_events_source_type'),
         db.Index('idx_event_city_state', 'city', 'state'),
         db.Index('idx_event_timestamp', 'timestamp'),
         db.Index('idx_event_active', 'is_active'),
@@ -171,8 +178,8 @@ class Participation(db.Model):
     __tablename__ = 'participations'
     
     participation_id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    event_id = db.Column(UUID(as_uuid=True), db.ForeignKey('events.event_id'), nullable=False)
-    user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.user_id'), nullable=False)
+    event_id = db.Column(UUID(as_uuid=True), db.ForeignKey('events.event_id', ondelete='CASCADE'), nullable=False)
+    user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.user_id', ondelete='CASCADE'), nullable=False)
     status = db.Column(db.String(20), nullable=False, default='interested')  # interested, going
     joined_at = db.Column(db.DateTime(timezone=True), default=_utc_now)
     created_at = db.Column(db.DateTime(timezone=True), default=_utc_now)
@@ -183,6 +190,7 @@ class Participation(db.Model):
         db.UniqueConstraint('event_id', 'user_id', name='unique_event_user_participation'),
         db.Index('idx_participation_status', 'status'),
         db.Index('idx_participation_joined_at', 'joined_at'),
+        db.CheckConstraint("status IN ('interested', 'going')", name='ck_participations_status'),
     )
     
     def __repr__(self):
@@ -205,8 +213,9 @@ class Notification(db.Model):
     __tablename__ = 'notifications'
     
     notification_id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.user_id'), nullable=False)
-    event_id = db.Column(UUID(as_uuid=True), db.ForeignKey('events.event_id'), nullable=True)  # Optional
+    user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.user_id', ondelete='CASCADE'), nullable=False)
+    # Optional; kept (set to NULL) when the event is deleted so the user keeps the notification
+    event_id = db.Column(UUID(as_uuid=True), db.ForeignKey('events.event_id', ondelete='SET NULL'), nullable=True)
     type = db.Column(db.String(50), nullable=False)  # 'event_reminder', 'event_update', 'new_participant', etc.
     title = db.Column(db.String(200), nullable=False)
     message = db.Column(db.Text, nullable=False)
@@ -268,13 +277,25 @@ class Tag(db.Model):
 class UserTag(db.Model):
     __tablename__ = 'user_tags'
     
-    user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.user_id'), primary_key=True)
-    tag_id = db.Column(UUID(as_uuid=True), db.ForeignKey('tags.tag_id'), primary_key=True)
+    user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.user_id', ondelete='CASCADE'), primary_key=True)
+    tag_id = db.Column(UUID(as_uuid=True), db.ForeignKey('tags.tag_id', ondelete='CASCADE'), primary_key=True)
     created_at = db.Column(db.DateTime(timezone=True), default=_utc_now)
 
 class EventTag(db.Model):
     __tablename__ = 'event_tags'
     
-    event_id = db.Column(UUID(as_uuid=True), db.ForeignKey('events.event_id'), primary_key=True)
-    tag_id = db.Column(UUID(as_uuid=True), db.ForeignKey('tags.tag_id'), primary_key=True)
+    event_id = db.Column(UUID(as_uuid=True), db.ForeignKey('events.event_id', ondelete='CASCADE'), primary_key=True)
+    tag_id = db.Column(UUID(as_uuid=True), db.ForeignKey('tags.tag_id', ondelete='CASCADE'), primary_key=True)
     created_at = db.Column(db.DateTime(timezone=True), default=_utc_now)
+
+
+class RevokedToken(db.Model):
+    """A JWT revoked at logout. Checked on every authenticated request.
+
+    Rows are only needed until the token would have expired anyway; the
+    scheduler deletes expired rows.
+    """
+    __tablename__ = 'revoked_tokens'
+
+    jti = db.Column(db.String(36), primary_key=True)  # JWT ID claim
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False, index=True)

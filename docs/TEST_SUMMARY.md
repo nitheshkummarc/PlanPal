@@ -14,7 +14,7 @@
 - `backend/tests/test_events.py`
 - `backend/tests/test_notifications.py`
 - `backend/tests/test_system.py`
-- Frontend vitest files (e.g. `mockAdapter.ts`, component tests)
+- Frontend vitest files (`src/__tests__/`: AuthContext, ProtectedRoute, config, tokenService, validators, helpers)
 
 ### Remaining Gaps
 - End-to-end (E2E) tests

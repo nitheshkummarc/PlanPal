@@ -2,38 +2,39 @@
  * eventsApi.ts - Events API Service
  *
  * Why: Handles all event-related HTTP requests to backend
+ * Response shapes match backend/app/routes/events.py.
  */
 
 import axiosInstance from '../services/axiosInstance';
 import type { AppEvent, Participation } from '../types';
+import type { Pagination } from '../types/api';
 
 interface EventFilters {
   page?: number;
   per_page?: number;
   city?: string;
   state?: string;
+  location?: string;
   date_from?: string;
   date_to?: string;
-  is_paid?: boolean;
-  tag_ids?: string;
-  q?: string;
-  sort_by?: string;
+  sort_by?: 'date' | 'created_at' | string;
   [key: string]: string | number | boolean | undefined;
 }
 
 interface EventListResponse {
   events: AppEvent[];
-  pagination?: {
-    page: number;
-    per_page: number;
-    total: number;
-    total_pages: number;
-  };
+  pagination?: Pagination;
+}
+
+export interface EventParticipant {
+  user_id: string;
+  name: string;
+  profile_image_url: string | null;
+  status: 'going' | 'interested';
 }
 
 interface EventDetailResponse {
-  event: AppEvent;
-  participants?: Participation[];
+  event: AppEvent & { participants?: EventParticipant[] };
 }
 
 interface EventMutationResponse {
@@ -45,9 +46,14 @@ interface MessageResponse {
   message: string;
 }
 
-interface ParticipationStatusResponse {
-  is_participating: boolean;
-  status: string | null;
+interface ParticipationResponse {
+  message: string;
+  participation: Participation;
+}
+
+export interface ParticipationStatusResponse {
+  status: 'going' | 'interested' | 'not_joined';
+  is_creator: boolean;
 }
 
 interface CreateEventData {
@@ -81,7 +87,7 @@ interface UpdateEventData {
 }
 
 export const eventsApi = {
-  // Get all events
+  // Upcoming events (Discover page)
   getAllEvents: async (filters: EventFilters = {}): Promise<EventListResponse> => {
     const response = await axiosInstance.get<EventListResponse>('/api/events/', { params: filters });
     return response.data;
@@ -93,15 +99,15 @@ export const eventsApi = {
     return response.data;
   },
 
-  // Get event details
+  // Get event details (includes tags and participants; past events too)
   getEventDetails: async (eventId: string): Promise<EventDetailResponse> => {
     const response = await axiosInstance.get<EventDetailResponse>(`/api/events/${eventId}`);
     return response.data;
   },
 
-  // Join event
-  joinEvent: async (eventId: string): Promise<MessageResponse> => {
-    const response = await axiosInstance.post<MessageResponse>(`/api/events/${eventId}/join`);
+  // Join event (joins as 'interested')
+  joinEvent: async (eventId: string): Promise<ParticipationResponse> => {
+    const response = await axiosInstance.post<ParticipationResponse>(`/api/events/${eventId}/join`);
     return response.data;
   },
 
@@ -117,15 +123,15 @@ export const eventsApi = {
     return response.data;
   },
 
-  // Delete event
+  // Delete event (participants are notified)
   deleteEvent: async (eventId: string): Promise<MessageResponse> => {
     const response = await axiosInstance.delete<MessageResponse>(`/api/events/${eventId}`);
     return response.data;
   },
 
-  // Update event status
-  updateEventStatus: async (eventId: string, status: string): Promise<MessageResponse> => {
-    const response = await axiosInstance.put<MessageResponse>(`/api/events/${eventId}/update-status`, {
+  // Switch your participation between 'interested' and 'going'
+  updateEventStatus: async (eventId: string, status: 'interested' | 'going'): Promise<ParticipationResponse> => {
+    const response = await axiosInstance.put<ParticipationResponse>(`/api/events/${eventId}/update-status`, {
       status,
     });
     return response.data;
@@ -137,31 +143,16 @@ export const eventsApi = {
     return response.data;
   },
 
-  // Get my events
+  // Events I created, past and upcoming (Dashboard/Calendar/Upcoming need them all,
+  // not the default page of 10; 100 is the backend maximum)
   getMyEvents: async (): Promise<EventListResponse> => {
-    const response = await axiosInstance.get<EventListResponse>('/api/events/my');
+    const response = await axiosInstance.get<EventListResponse>('/api/events/my', { params: { per_page: 100 } });
     return response.data;
   },
 
-  // Get joined events
+  // Events I joined, past and upcoming
   getJoinedEvents: async (): Promise<EventListResponse> => {
-    const response = await axiosInstance.get<EventListResponse>('/api/events/joined');
-    return response.data;
-  },
-
-  // Get my created events
-  getMyCreatedEvents: async (): Promise<EventListResponse> => {
-    const response = await axiosInstance.get<EventListResponse>('/api/events/my-events');
-    return response.data;
-  },
-
-  // Search events with filters
-  searchEvents: async (query = '', filters: EventFilters = {}): Promise<EventListResponse> => {
-    const params: EventFilters = {
-      q: query,
-      ...filters
-    };
-    const response = await axiosInstance.get<EventListResponse>('/api/events/', { params });
+    const response = await axiosInstance.get<EventListResponse>('/api/events/joined', { params: { per_page: 100 } });
     return response.data;
   },
 };

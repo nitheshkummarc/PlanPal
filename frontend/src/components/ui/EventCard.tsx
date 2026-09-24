@@ -136,10 +136,10 @@ const EventCard = ({ event, onClick }: EventCardProps) => {
           </div>
         )}
 
-        {event.created_by && (
+        {(event.created_by || event.creator_name) && (
           <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Created by {event.created_by.name || event.created_by.username}
+              Created by {event.created_by?.name || event.created_by?.username || event.creator_name}
             </p>
           </div>
         )}

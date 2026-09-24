@@ -13,6 +13,13 @@ import { LoadingSpinner, LoadingButton } from '../components/ui/Loading';
 import TagChip from '../components/ui/TagChip';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import { getApiErrorMessage, notifyEventsChanged } from '../utils/helpers';
+
+/** Format a Date as 'YYYY-MM-DDTHH:mm' in the user's local timezone (for datetime-local inputs). */
+const toLocalInputValue = (date: Date): string => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
 
 const EditEvent = () => {
   const { id: eventId } = useParams<{ id: string }>();
@@ -60,7 +67,8 @@ const EditEvent = () => {
         return;
       }
 
-      const timestamp = event.timestamp ? new Date(event.timestamp).toISOString().slice(0, 16) : '';
+      // datetime-local inputs show local time, so convert from UTC (toISOString() would show UTC)
+      const timestamp = event.timestamp ? toLocalInputValue(new Date(event.timestamp)) : '';
 
       setFormData({
         title: event.title || '',
@@ -150,17 +158,20 @@ const EditEvent = () => {
 
       const eventData = {
         ...formData,
+        // The input holds local time; send UTC like CreateEvent does
+        timestamp: new Date(formData.timestamp).toISOString(),
         max_participants: formData.max_participants ? parseInt(formData.max_participants) : undefined,
         price: formData.is_paid ? parseFloat(formData.price) : undefined
       };
 
       await eventsApi.updateEvent(eventId!, eventData);
       toast.success('Event updated successfully!');
+      notifyEventsChanged();
       navigate(`/events/${eventId}`);
 
     } catch (error: any) {
       console.error('Failed to update event:', error);
-      toast.error(error.response?.data?.error || 'Failed to update event');
+      toast.error(getApiErrorMessage(error, 'Failed to update event'));
     } finally {
       setSaving(false);
     }

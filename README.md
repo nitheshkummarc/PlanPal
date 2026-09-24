@@ -22,12 +22,14 @@ A deployed full-stack event management platform built with **React, TypeScript, 
 
 ## Engineering at a Glance
 
-- **44 REST API endpoints** covering authentication, events, participation, notifications, tags, users, and system health
-- **68 automated tests** — 41 backend tests with pytest and 27 frontend tests
-- **JWT authentication and authorization** with role- and ownership-based access control
-- **PostgreSQL relational model** using UUIDs, foreign keys, composite keys, uniqueness constraints, and cascades
+- **42 REST API endpoints** covering authentication, events, participation, notifications, tags, users, search, and system health
+- **123 automated tests** — 86 backend tests with pytest and 37 frontend tests with Vitest
+- **JWT authentication and authorization** with role- and ownership-based access control; logout revokes tokens server-side
+- **PostgreSQL relational model** using UUIDs, foreign keys, composite keys, uniqueness constraints, CHECK constraints, and ON DELETE rules
+- **Atomic, race-safe participation**: joins lock the event row and save the participation, participant count and notifications in one transaction
 - **Rate limiting** on authentication endpoints (5 requests/minute per IP) using Flask-Limiter
-- **Background maintenance** through a threaded `TaskScheduler` that handles event expiration outside request processing
+- **Background maintenance** through a threaded `TaskScheduler`: expires past events, sends one reminder per participant for events within 24 hours, and cleans up revoked tokens (idempotent and safe with multiple workers)
+- **One error contract** across the API: every error is `{"success": false, "error": "..."}`
 - **CI/CD workflow** with GitHub Actions for automated validation and Vercel/Render for deployment
 - **Explicit CORS allow-list** restricted to approved production origins
 - **Health and readiness endpoints** for deployment health checks
@@ -71,7 +73,13 @@ Protected operations require JWT authentication and enforce role- or resource-ow
 A threaded `TaskScheduler` runs periodically to mark expired events inactive, decoupling cleanup operations from request-time logic.
 
 **Safe Error Responses & Validation**
-API payloads are validated against Zod schemas on the frontend before transmission. The backend independently validates requests and returns client-safe error messages while logging internal exceptions server-side without exposing raw exception details.
+The backend validates every request and returns client-safe error messages in one shape (`{"success": false, "error": "..."}`) while logging internal exceptions server-side. Form rules (email, password, username, name) are shared: the frontend's `utils/validators.ts` mirrors the backend's `app/utils/validators.py`, so a form that passes in the browser is accepted by the API. Zod schemas in `frontend/src/schemas` are the single source of TypeScript types for API data.
+
+**Transactions and Concurrency**
+Joining an event locks the event row (`SELECT ... FOR UPDATE`) so the capacity check can't be raced, and the participation, cached participant count and notifications are committed together. Notification helpers never commit on their own.
+
+**HTTPS Everywhere**
+In production the API redirects plain HTTP to HTTPS (308) and sends HSTS; the frontend is served by Vercel over HTTPS with HSTS and `upgrade-insecure-requests`. No secrets are shipped to the browser — the frontend only receives the public API URL.
 
 **Explicit CORS Allow-list**
 The backend uses an explicit allowed-origins list when credentials are enabled, avoiding wildcard origins for credentialed requests.
@@ -82,12 +90,13 @@ The backend uses an explicit allowed-origins list when credentials are enabled, 
 
 ![Event Management System ER Diagram](./assets/ER%20diagram.png?v=2)
 
-Key database rules defined in `database/supabase_migration.sql`:
+Key database rules (defined in both `database/init.sql` and the SQLAlchemy models):
 - One participation per user per event
 - Event and user tags use composite primary keys
 - Event tags and participations cascade when an event is deleted
 - Notification event references are nullable and use `ON DELETE SET NULL`
-- Event `source_type` is constrained to valid schema values
+- Event `source_type`, participation `status` and user `role` are constrained to valid values
+- An organiser can't create two events with the same title at the same time
 
 ---
 
@@ -95,7 +104,7 @@ Key database rules defined in `database/supabase_migration.sql`:
 
 | Layer | Technology |
 | --- | --- |
-| Frontend | React, TypeScript, Vite, Vanilla CSS, Axios, React Router, Zod |
+| Frontend | React, TypeScript, Vite, Tailwind CSS, Axios, React Router, Zod (types) |
 | Backend | Python 3.11, Flask, Flask-JWT-Extended, Flask-Bcrypt, Flask-CORS, SQLAlchemy |
 | Database | PostgreSQL (Supabase) |
 | Infrastructure | Docker (Local Dev), Vercel (Frontend Hosting), Render (Backend PaaS) |
@@ -128,11 +137,14 @@ Expected API URL: `http://localhost:5000`
 
 ### 2. Database
 
-Run the migration SQL against your Supabase project to initialize the schema manually.
+Run the schema SQL against your Supabase project (or any PostgreSQL database) to initialize it:
 
 ```text
-database/supabase_migration.sql
+database/init.sql
 ```
+
+Databases created before 2026-09-25 should also run `database/migrations/001_align_existing_schema.sql` once.
+(The backend's start command also runs `db.create_all()`, which creates any missing tables.)
 *(Note: Database access is mediated exclusively through the Flask backend, where authentication and authorization are enforced before database operations; privileged Supabase credentials are never exposed to the client).*
 
 ### 3. Frontend
@@ -152,14 +164,16 @@ Expected frontend URL: `http://localhost:5173`
 
 | Suite | Result |
 | --- | ---: |
-| Backend | 41 tests passing |
-| Frontend | 27 tests passing |
+| Backend | 86 tests passing |
+| Frontend | 37 tests passing |
 | Frontend production build | Passing |
 | GitHub Actions CI | Passing |
 
 **Run Backend Tests:**
 ```bash
-pytest backend/tests -q
+cd backend
+pip install -r requirements-dev.txt   # runtime requirements + pytest
+pytest tests -q
 ```
 
 **Run Frontend Tests:**
@@ -173,20 +187,18 @@ npm run build
 
 ## API Surface
 
-44 REST endpoints across 7 route groups: 4 core resources (Events, Notifications, Tags, Users) plus Auth, Search, and System.
+| Area | Endpoints |
+| --- | --- |
+| Auth | register, login, profile, change password |
+| Events | list upcoming, create, detail (incl. past events), update, delete, join, leave, interested/going status, my events, joined events |
+| Notifications | list, create, mark read/unread, mark all read, delete, delete all, unread count, types |
+| Tags | list, detail, create, update, delete (admin-protected mutations) |
+| Users | current profile, public profile, user search |
+| Search | events (by name and/or tags, location, dates), users, tags |
+| System | health and readiness endpoints (`/api/system/health`, `/api/system/ready`) |
 
-| Resource | Base Path | Endpoints | Description |
-|---|---|---|---|
-| Events | `/api/events` | 11 | CRUD, join/leave, participation status, my/joined events, status update |
-| Notifications | `/api/notifications` | 12 | CRUD, mark read/unread, unread count, notification types, push subscribe/unsubscribe |
-| Tags | `/api/tags` | 7 | CRUD, search, popular tags (admin-protected mutations) |
-| Users | `/api/users` | 3 | Current profile, user search, user detail |
-| Auth | `/api/auth` | 7 | Register, login, logout, token refresh, profile get/update, change password |
-| Search | `/api/search` | 1 | Cross-resource search |
-| System | `/api/system` | 3 | Health, readiness, version |
-| **Total** | | **44** | 20 GET · 11 POST · 7 PUT · 6 DELETE |
+*Most protected routes require a JWT access token in the `Authorization: Bearer <token>` header.*
 
-*Most protected routes require a JWT access token in the `Authorization: Bearer <token>` header. Full function-level documentation is in [`docs/ROUTE_DOCUMENTATION.md`](docs/ROUTE_DOCUMENTATION.md).*
 ---
 
 ## Repository Layout
@@ -196,15 +208,15 @@ backend/
   app/
     models/       SQLAlchemy models
     routes/       Flask route blueprints
-    services/     Event, notification, and scheduler logic
-    utils/        Validation, response, security, and Supabase helpers
+    services/     Notification and scheduler logic
+    utils/        Validation, error response, and security-header helpers
   tests/          pytest API contract tests
   config.py       Flask configuration
   run.py          Local API entrypoint
 
 database/
-  supabase_migration.sql
-  supabase_rls_policies.sql      Optional/legacy RLS policy definitions
+  init.sql                       Schema (tables, constraints, indexes, sample tags)
+  migrations/                    One-time migrations for existing databases
 
 frontend/
   src/

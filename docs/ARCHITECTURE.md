@@ -21,7 +21,9 @@ PlanPal follows a containerized, decoupled architecture separating the client-si
 - **Framework:** Python Flask provides a lightweight, unopinionated WSGI framework.
 - **Authentication:** `flask-jwt-extended` handles JWT (JSON Web Token) generation and validation. Tokens are stored securely and verified on protected routes.
 - **Security:** Passwords are never stored in plaintext. They are hashed using `bcrypt` (via Flask-Bcrypt) with a work factor designed to deter brute-force attacks.
-- **Task Scheduling:** A background daemon thread handles periodic maintenance, such as expiring past events automatically.
+- **Logout:** Revokes the access and refresh tokens (their JWT ids are stored in a `revoked_tokens` denylist checked on every request).
+- **Task Scheduling:** A background daemon thread (enabled with `ENABLE_TASK_SCHEDULER`) runs every 5 minutes: it marks past events as expired, creates one reminder per participant for events starting within 24 hours, and deletes expired revoked tokens. Reminders are idempotent (never duplicated or skipped across restarts) and, on PostgreSQL, each job takes an advisory lock so only one worker runs it.
+- **Transactions:** Each request commits once. Joining an event locks the event row, then saves the participation, the cached participant count and the notifications together.
 
 ### 2.3 Database Layer (Supabase / PostgreSQL)
 - **Hosting:** Fully managed PostgreSQL hosted on Supabase.
@@ -32,7 +34,7 @@ PlanPal follows a containerized, decoupled architecture separating the client-si
 In the local development environment, Nginx sits at the edge of our Docker network. It serves two critical functions locally:
 1. **Static File Serving:** Delivers the built React assets (`index.html`, CSS, JS) at lightning speed.
 2. **Reverse Proxy:** Intercepts any request starting with `/api/` and routes it to the Flask backend container, effectively eliminating CORS issues.
-*(Note: In production, the frontend is hosted on Vercel and the backend runs on Render, with Vercel proxying API requests directly to the Render service).*
+*(Note: In production, the frontend is hosted on Vercel and the backend runs on Render. The browser calls the Render API directly (`VITE_API_BASE_URL`), which is why the backend uses an explicit CORS allow-list. Both are served over HTTPS only: the API redirects HTTP to HTTPS and both send HSTS.)*
 
 ## 3. Data Flow Example: User Registration
 
@@ -46,5 +48,5 @@ In the local development environment, Nginx sits at the edge of our Docker netwo
 8. The frontend stores the JWT and redirects the user to the dashboard.
 
 ## 4. Scalability Considerations
-- **Stateless Authentication:** Because authentication relies on JWTs rather than server-side memory sessions, the HTTP request layer is highly scalable. However, process-local components like the threaded TaskScheduler and in-memory rate-limiter currently constrain horizontal scaling without migrating to a shared store (like Redis) and a dedicated background worker (like Celery).
+- **Stateless Authentication:** Because authentication relies on JWTs rather than server-side memory sessions, the HTTP request layer is highly scalable. Rate limiting uses Redis when `REDIS_URL` is set (shared across workers) and in-memory storage otherwise. The scheduler is safe to run in several workers (advisory locks + idempotent reminders); at larger scale it would move to a dedicated worker or cron job.
 - **Database Connection Limits:** Supabase handles connection pooling at the edge, meaning backend connection scaling will not easily exhaust PostgreSQL's internal connection limits.

@@ -13,6 +13,7 @@ import TagChip from '../components/ui/TagChip';
 import { useApi } from '../hooks/useApi';
 import { validateForm, eventSchema } from '../utils/validators';
 import toast from 'react-hot-toast';
+import { getApiErrorMessage, notifyEventsChanged } from '../utils/helpers';
 
 const CreateEvent = () => {
   const navigate = useNavigate();
@@ -26,7 +27,6 @@ const CreateEvent = () => {
     state: '',
     place: '',
     max_participants: '',
-    category: '',
     is_paid: false,
     price: ''
   });
@@ -112,22 +112,18 @@ const CreateEvent = () => {
 
       toast.success('Event created successfully!');
 
-      localStorage.setItem('eventUpdated', Date.now().toString());
+      notifyEventsChanged();
 
       navigate(`/events/${(response as any).event.event_id}`);
 
     } catch (error: any) {
       console.error('Failed to create event:', error);
-      toast.error(error.response?.data?.error || error.response?.data?.message || 'Failed to create event');
+      toast.error(getApiErrorMessage(error, 'Failed to create event'));
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const categories = [
-    'Technology', 'Sports', 'Music', 'Art', 'Food', 'Business',
-    'Education', 'Health', 'Travel', 'Entertainment', 'Other'
-  ];
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
@@ -319,25 +315,8 @@ const CreateEvent = () => {
               </div>
             </div>
 
+            {/* Categories are the event's tags (chosen below) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label htmlFor="category" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Category
-                </label>
-                <select
-                  id="category"
-                  name="category"
-                  value={formData.category}
-                  onChange={handleChange}
-                  className="input-field"
-                >
-                  <option value="">Select a category</option>
-                  {categories.map(category => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
-              </div>
-
               <div>
                 <label htmlFor="max_participants" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Max Participants

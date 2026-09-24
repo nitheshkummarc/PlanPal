@@ -1,25 +1,20 @@
 /**
  * App.tsx - Main Application Component
- * 
+ *
  * Why: Root component that sets up routing, authentication, theme, and layout
- * 
- * Components Used:
- * - React Router for client-side routing
- * - Authentication context for user state management
- * - Theme context for dark/light mode
- * - Protected and public route wrappers
- * - Toast notifications for user feedback
- * - Layout wrapper for consistent UI
- * 
+ *
  * Routes Structure:
  * Public Routes:
  * - /                  - Home landing page
  * - /login             - User login page
  * - /register          - User registration page
- * 
+ * - /privacy           - Privacy Policy
+ * - /terms             - Terms and Conditions
+ * - /404 and any unknown URL - Custom "Page not found" page
+ *
  * Protected Routes (require authentication):
  * - /dashboard         - User dashboard with overview
- * - /events            - Browse all events
+ * - /events            - Browse upcoming events
  * - /events/:id        - Event details page
  * - /events/:id/edit   - Edit event (creator only)
  * - /create-event      - Create new event form
@@ -28,52 +23,64 @@
  * - /notifications     - User notifications center
  * - /search            - Global search page
  * - /upcoming-events   - Upcoming events list
- * 
+ * - /users/:id         - Another user's public profile
+ *
+ * Performance: the pages people land on first (Home, Login, Register,
+ * Dashboard) are in the main bundle so they render without an extra request;
+ * every other page is lazy-loaded (React.lazy) and fetched when first visited.
+ * Measured with Lighthouse (mobile): this keeps first paint as fast as a single
+ * bundle while cutting the JavaScript downloaded on first visit.
+ *
  * Context Providers:
  * - ThemeProvider: Manages dark/light theme state
  * - AuthProvider: Manages authentication and user state
  * - Router: React Router for navigation
- * 
- * Global Components:
- * - Toaster: Hot toast notifications for user feedback
- * - Layout: Common layout wrapper (navbar, footer)
- * 
- * Dependencies:
- * - react-router-dom for routing
- * - react-hot-toast for notifications
- * - Custom contexts (AuthContext, ThemeContext)
  */
 
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import React, { lazy, Suspense } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
 // Context Providers
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 
-// Layout Components
+// Layout Components (small and used on every page, so loaded up front)
 import Layout from './components/layout/Layout';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import PublicRoute from './components/common/PublicRoute';
+import { LoadingPage } from './components/ui/Loading';
 
-// Pages
+// Entry pages: loaded up front (see "Performance" above)
 import Home from './pages/Home';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import Dashboard from './pages/Dashboard';
-import Events from './pages/Events';
-import EventDetails from './pages/EventDetails';
-import CreateEvent from './pages/CreateEvent';
-import EditEvent from './pages/EditEvent';
-import Calendar from './pages/Calendar';
-import Profile from './pages/Profile';
-import Notifications from './pages/Notifications';
-import Search from './pages/Search';
-import UpcomingEvents from './pages/UpcomingEvents';
+
+// Other pages: each becomes its own JS chunk, fetched on first visit
+const Events = lazy(() => import('./pages/Events'));
+const EventDetails = lazy(() => import('./pages/EventDetails'));
+const CreateEvent = lazy(() => import('./pages/CreateEvent'));
+const EditEvent = lazy(() => import('./pages/EditEvent'));
+const Calendar = lazy(() => import('./pages/Calendar'));
+const Profile = lazy(() => import('./pages/Profile'));
+const Notifications = lazy(() => import('./pages/Notifications'));
+const Search = lazy(() => import('./pages/Search'));
+const UpcomingEvents = lazy(() => import('./pages/UpcomingEvents'));
+const UserProfile = lazy(() => import('./pages/UserProfile'));
+const PrivacyPolicy = lazy(() => import('./pages/legal/PrivacyPolicy'));
+const TermsOfService = lazy(() => import('./pages/legal/TermsOfService'));
+const NotFound = lazy(() => import('./pages/NotFound'));
 
 // Styles
 import './styles/index.css';
+
+/** Wraps a page that requires login in the guard and the standard layout. */
+const protectedPage = (page: React.ReactNode) => (
+  <ProtectedRoute>
+    <Layout>{page}</Layout>
+  </ProtectedRoute>
+);
 
 function App() {
   return (
@@ -81,138 +88,33 @@ function App() {
       <AuthProvider>
         <Router>
           <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
-            <Routes>
-              {/* Public Routes */}
-              <Route
-                path="/"
-                element={
-                  <Layout>
-                    <Home />
-                  </Layout>
-                }
-              />
-              <Route
-                path="/login"
-                element={
-                  <PublicRoute>
-                    <Login />
-                  </PublicRoute>
-                }
-              />
-              <Route
-                path="/register"
-                element={
-                  <PublicRoute>
-                    <Register />
-                  </PublicRoute>
-                }
-              />
+            <Suspense fallback={<LoadingPage />}>
+              <Routes>
+                {/* Public Routes */}
+                <Route path="/" element={<Layout><Home /></Layout>} />
+                <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+                <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+                <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />
+                <Route path="/terms" element={<Layout><TermsOfService /></Layout>} />
 
-              {/* Protected Routes */}
-              <Route
-                path="/dashboard"
-                element={
-                  <ProtectedRoute>
-                    <Layout>
-                      <Dashboard />
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/events"
-                element={
-                  <ProtectedRoute>
-                    <Layout>
-                      <Events />
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/events/:id"
-                element={
-                  <ProtectedRoute>
-                    <Layout>
-                      <EventDetails />
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/events/:id/edit"
-                element={
-                  <ProtectedRoute>
-                    <Layout>
-                      <EditEvent />
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/create-event"
-                element={
-                  <ProtectedRoute>
-                    <Layout>
-                      <CreateEvent />
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/calendar"
-                element={
-                  <ProtectedRoute>
-                    <Layout>
-                      <Calendar />
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/profile"
-                element={
-                  <ProtectedRoute>
-                    <Layout>
-                      <Profile />
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/notifications"
-                element={
-                  <ProtectedRoute>
-                    <Layout>
-                      <Notifications />
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/search"
-                element={
-                  <ProtectedRoute>
-                    <Layout>
-                      <Search />
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/upcoming-events"
-                element={
-                  <ProtectedRoute>
-                    <Layout>
-                      <UpcomingEvents />
-                    </Layout>
-                  </ProtectedRoute>
-                }
-              />
+                {/* Protected Routes */}
+                <Route path="/dashboard" element={protectedPage(<Dashboard />)} />
+                <Route path="/events" element={protectedPage(<Events />)} />
+                <Route path="/events/:id" element={protectedPage(<EventDetails />)} />
+                <Route path="/events/:id/edit" element={protectedPage(<EditEvent />)} />
+                <Route path="/create-event" element={protectedPage(<CreateEvent />)} />
+                <Route path="/calendar" element={protectedPage(<Calendar />)} />
+                <Route path="/profile" element={protectedPage(<Profile />)} />
+                <Route path="/notifications" element={protectedPage(<Notifications />)} />
+                <Route path="/search" element={protectedPage(<Search />)} />
+                <Route path="/upcoming-events" element={protectedPage(<UpcomingEvents />)} />
+                <Route path="/users/:id" element={protectedPage(<UserProfile />)} />
 
-              {/* Fallback route */}
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
+                {/* 404: explicit /404 (used by placeholder links) and any unknown URL */}
+                <Route path="/404" element={<Layout><NotFound /></Layout>} />
+                <Route path="*" element={<Layout><NotFound /></Layout>} />
+              </Routes>
+            </Suspense>
 
             {/* Toast notifications */}
             <Toaster

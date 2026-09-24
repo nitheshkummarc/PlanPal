@@ -94,10 +94,12 @@ FLASK_ENV=development
 SECRET_KEY=change-me
 JWT_SECRET_KEY=change-me-too
 SUPABASE_DATABASE_URL=postgresql://user:password@host:5432/database
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
 ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ENABLE_TASK_SCHEDULER=false
+# Optional
+# REDIS_URL=redis://localhost:6379/0   rate-limit storage shared across workers
+# PROXY_FIX_X_FOR=0                     reverse proxies in front of the app (production default 1)
+# FORCE_HTTPS=false                     redirect HTTP to HTTPS (production default true)
 ```
 
 Real `.env` files must stay local and are ignored by the root `.gitignore`.
@@ -106,22 +108,11 @@ Real `.env` files must stay local and are ignored by the root `.gitignore`.
 
 ## Verification
 
-Run backend tests:
+Install test dependencies and run the backend tests:
 
 ```bash
+pip install -r requirements-dev.txt
 pytest tests -q
-```
-
-Run from the repository root if using the root README commands:
-
-```bash
-pytest backend/tests -q
-```
-
-Validate Supabase migration setup:
-
-```bash
-python ..\scripts\test_supabase_migration.py
 ```
 
 ---

@@ -1,30 +1,48 @@
 /**
  * validators.ts - Form validation utilities
  *
- * Why: Centralized validation logic for form inputs
+ * Why: Centralized validation logic for form inputs.
+ * The user rules (email, password, username, name, URL) mirror
+ * backend/app/utils/validators.py so a form that passes here is accepted by the
+ * API. Keep both files in sync.
  */
 
+export const EMAIL_MESSAGE = 'Please enter a valid email address';
+export const PASSWORD_MESSAGE =
+  "Password must be 8-128 characters with uppercase, lowercase, number, and special character, and must not contain common patterns like 'password' or '12345'";
+export const USERNAME_MESSAGE = 'Username must be 3-20 characters and contain only letters, numbers, and underscores';
+export const NAME_MESSAGE = 'Name may only contain letters, spaces, hyphens, apostrophes and dots (max 100 characters)';
+
+const WEAK_PASSWORD_PATTERNS = ['password', '12345', 'qwerty', 'admin'];
+
 export const validateEmail = (email: string): boolean => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
+  if (!email || email.length > 254 || email.includes('..')) return false;
+  return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email);
 };
 
 export const validatePassword = (password: string): boolean => {
-  // At least 8 characters, one uppercase, one lowercase, one number
-  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d@$!%*?&]{8,}$/;
-  return passwordRegex.test(password);
+  if (!password || password.length < 8 || password.length > 128) return false;
+  if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password)) return false;
+  // Special character = anything that isn't a letter, digit or whitespace
+  if (!/[^A-Za-z0-9\s]/.test(password)) return false;
+  const lower = password.toLowerCase();
+  return !WEAK_PASSWORD_PATTERNS.some(pattern => lower.includes(pattern));
 };
 
 export const validateUsername = (username: string): boolean => {
   // 3-20 characters, alphanumeric and underscores only
-  const usernameRegex = /^[a-zA-Z0-9_]{3,20}$/;
-  return usernameRegex.test(username);
+  return /^[a-zA-Z0-9_]{3,20}$/.test(username);
 };
 
-export const validatePhone = (phone: string): boolean => {
-  // Basic phone number validation (digits, spaces, hyphens, parentheses)
-  const phoneRegex = /^[+]?[\d\s\-()]{10,15}$/;
-  return phoneRegex.test(phone);
+export const validateName = (name: string): boolean => {
+  // Letters from any language (incl. combining marks, e.g. Tamil), spaces, - ' and .
+  if (!name || !name.trim() || name.length > 100) return false;
+  return /^[\p{L}\p{M} .'-]+$/u.test(name);
+};
+
+export const validateHttpUrl = (url: string): boolean => {
+  // Empty is allowed (field is optional); otherwise an http(s) URL
+  return !url || (url.length <= 500 && /^https?:\/\/\S+$/.test(url));
 };
 
 export const validateRequired = (value: string | null | undefined): boolean => {
@@ -39,15 +57,6 @@ export const validateMaxLength = (value: string | null | undefined, maxLength: n
   return !value || value.toString().length <= maxLength;
 };
 
-export const validateUrl = (url: string): boolean => {
-  try {
-    new URL(url);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 export const validateDate = (date: string): boolean => {
   const dateObject = new Date(date);
   return dateObject instanceof Date && !isNaN(dateObject.getTime());
@@ -59,24 +68,6 @@ export const validateFutureDate = (date: string): boolean => {
   return validateDate(date) && dateObject > now;
 };
 
-export const validateRange = (value: string | number, min: number, max: number): boolean => {
-  const numValue = Number(value);
-  return !isNaN(numValue) && numValue >= min && numValue <= max;
-};
-
-export const validateAge = (birthDate: string): boolean => {
-  const today = new Date();
-  const birth = new Date(birthDate);
-  let age = today.getFullYear() - birth.getFullYear();
-  const monthDiff = today.getMonth() - birth.getMonth();
-  
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-    age--;
-  }
-  
-  return age >= 13 && age <= 120; // Reasonable age range
-};
-
 // Validator entry for schema-based form validation
 interface ValidatorEntry {
   validator: (value: string) => boolean;
@@ -85,42 +76,11 @@ interface ValidatorEntry {
 
 type ValidationSchema = Record<string, ValidatorEntry[]>;
 
-// Form validation schemas
-export const loginSchema: ValidationSchema = {
-  email: [
-    { validator: validateRequired, message: 'Email is required' },
-    { validator: validateEmail, message: 'Please enter a valid email address' }
-  ],
-  password: [
-    { validator: validateRequired, message: 'Password is required' }
-  ]
-};
-
-export const registerSchema: ValidationSchema = {
-  username: [
-    { validator: validateRequired, message: 'Username is required' },
-    { validator: validateUsername, message: 'Username must be 3-20 characters, alphanumeric and underscores only' }
-  ],
-  email: [
-    { validator: validateRequired, message: 'Email is required' },
-    { validator: validateEmail, message: 'Please enter a valid email address' }
-  ],
-  password: [
-    { validator: validateRequired, message: 'Password is required' },
-    { validator: validatePassword, message: 'Password must be at least 8 characters with uppercase, lowercase, and number' }
-  ],
-  name: [
-    { validator: validateRequired, message: 'Name is required' },
-    { validator: (value: string) => validateMinLength(value, 2), message: 'Name must be at least 2 characters' },
-    { validator: (value: string) => validateMaxLength(value, 50), message: 'Name must be less than 50 characters' }
-  ]
-};
-
 export const eventSchema: ValidationSchema = {
   title: [
     { validator: validateRequired, message: 'Event title is required' },
     { validator: (value: string) => validateMinLength(value, 3), message: 'Title must be at least 3 characters' },
-    { validator: (value: string) => validateMaxLength(value, 100), message: 'Title must be less than 100 characters' }
+    { validator: (value: string) => validateMaxLength(value, 200), message: 'Title must be 200 characters or fewer' }
   ],
   description: [
     { validator: validateRequired, message: 'Event description is required' },
@@ -151,18 +111,17 @@ export const eventSchema: ValidationSchema = {
 export const profileSchema: ValidationSchema = {
   name: [
     { validator: validateRequired, message: 'Name is required' },
-    { validator: (value: string) => validateMinLength(value, 2), message: 'Name must be at least 2 characters' },
-    { validator: (value: string) => validateMaxLength(value, 50), message: 'Name must be less than 50 characters' }
+    { validator: validateName, message: NAME_MESSAGE }
   ],
-  email: [
-    { validator: validateRequired, message: 'Email is required' },
-    { validator: validateEmail, message: 'Please enter a valid email address' }
-  ],
-  phone: [
-    { validator: (value: string) => !value || validatePhone(value), message: 'Please enter a valid phone number' }
+  username: [
+    { validator: validateRequired, message: 'Username is required' },
+    { validator: validateUsername, message: USERNAME_MESSAGE }
   ],
   bio: [
-    { validator: (value: string) => validateMaxLength(value, 500), message: 'Bio must be less than 500 characters' }
+    { validator: (value: string) => validateMaxLength(value, 500), message: 'Bio must be 500 characters or fewer' }
+  ],
+  profile_image_url: [
+    { validator: validateHttpUrl, message: 'Profile image URL must start with http:// or https://' }
   ]
 };
 
@@ -172,19 +131,14 @@ interface FormValidationResult {
   errors: Record<string, string>;
 }
 
-interface FieldValidationResult {
-  isValid: boolean;
-  error: string | null;
-}
-
 // Validation runner function
 export const validateForm = (data: Record<string, any>, schema: ValidationSchema): FormValidationResult => {
   const errors: Record<string, string> = {};
-  
+
   for (const field in schema) {
     const value = data[field];
     const validators = schema[field];
-    
+
     for (const { validator, message } of validators) {
       if (!validator(value)) {
         errors[field] = message;
@@ -192,19 +146,9 @@ export const validateForm = (data: Record<string, any>, schema: ValidationSchema
       }
     }
   }
-  
+
   return {
     isValid: Object.keys(errors).length === 0,
     errors
   };
-};
-
-// Field-specific validation function
-export const validateField = (value: string, fieldValidators: ValidatorEntry[]): FieldValidationResult => {
-  for (const { validator, message } of fieldValidators) {
-    if (!validator(value)) {
-      return { isValid: false, error: message };
-    }
-  }
-  return { isValid: true, error: null };
 };

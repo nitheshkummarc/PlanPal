@@ -5,7 +5,11 @@ services:
     region: singapore
     plan: free
     buildCommand: "pip install -r backend/requirements.txt"
+    # db.create_all() creates any missing tables (e.g. revoked_tokens); it never alters existing ones.
+    # For a database created before 2026-09-25, also run database/migrations/001_align_existing_schema.sql once.
     startCommand: "cd backend && python -c \"from run import db, app; app.app_context().push(); db.create_all()\" && gunicorn run:app --bind 0.0.0.0:$PORT"
+    # Only route traffic to a new deploy once it can reach the database
+    healthCheckPath: /api/system/ready
     envVars:
       - key: FLASK_ENV
         value: production
@@ -13,17 +17,13 @@ services:
         value: https://planpal-silk.vercel.app
       - key: SUPABASE_DATABASE_URL
         sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_ANON_KEY
-        sync: false
-      - key: SUPABASE_SERVICE_KEY
-        sync: false
       - key: SECRET_KEY
         generateValue: true
       - key: JWT_SECRET_KEY
         generateValue: true
-      - key: ENCRYPTION_KEY
-        generateValue: true
+      # Background jobs: expire past events, event reminders, revoked-token cleanup
+      - key: ENABLE_TASK_SCHEDULER
+        value: "true"
+      # Optional: Redis for rate-limit storage; empty = in-memory (fine for one instance)
       - key: REDIS_URL
         sync: false

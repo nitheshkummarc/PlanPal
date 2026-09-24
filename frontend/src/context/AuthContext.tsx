@@ -131,7 +131,7 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
         ...state,
         isAuthenticated: false,
         user: null,
-        loading: true,
+        loading: false, // was true: nothing reset it, so /login spun forever after logout
         error: null,
       };
     case 'UPDATE_USER':

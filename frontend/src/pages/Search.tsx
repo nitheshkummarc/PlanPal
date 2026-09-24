@@ -11,7 +11,10 @@ import { tagsApi } from '../api/tagsApi';
 import EventCard from '../components/ui/EventCard';
 import UserCard from '../components/ui/UserCard';
 import TagChip from '../components/ui/TagChip';
-import { useApi, usePagination, useDebounce } from '../hooks/useApi';
+import { useApi, useDebounce } from '../hooks/useApi';
+
+// The search API returns up to this many results per type (no paging)
+const RESULT_LIMIT = 50;
 
 const Search = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -25,7 +28,6 @@ const Search = () => {
   });
 
   const debouncedQuery = useDebounce(query, 500);
-  const pagination = usePagination(1, 20);
 
   const {
     data: searchResults,
@@ -50,7 +52,7 @@ const Search = () => {
     } else {
       resetSearchResults();
     }
-  }, [debouncedQuery, activeTab, filters, selectedTags, pagination.page]);
+  }, [debouncedQuery, activeTab, filters, selectedTags]);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -66,29 +68,25 @@ const Search = () => {
     try {
       const searchFilters = {
         type: activeTab as 'all' | 'events' | 'users' | 'tags',
-        page: pagination.page,
-        limit: pagination.limit,
+        limit: RESULT_LIMIT,
         location: filters.location,
         sort_by: filters.sort_by,
         tag_ids: selectedTags.map(tag => tag.tag_id || tag.id).join(',')
       };
 
-      const searchQuery = debouncedQuery.trim() || (selectedTags.length > 0 ? '' : debouncedQuery);
-      const result = await performSearch(searchQuery, searchFilters);
-      pagination.setTotal((result as any)?.total || 0);
+      await performSearch(debouncedQuery.trim(), searchFilters);
     } catch (error) {
+      // useApi already showed the error toast
       console.error('Search failed:', error);
     }
   };
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
-    pagination.reset();
   };
 
   const handleFilterChange = (key: string, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));
-    pagination.reset();
   };
 
   const handleTagToggle = (tag: any) => {
@@ -100,7 +98,6 @@ const Search = () => {
         return [...prev, tag];
       }
     });
-    pagination.reset();
   };
 
   const clearFilters = () => {
@@ -109,7 +106,6 @@ const Search = () => {
       location: '',
       sort_by: 'relevance'
     });
-    pagination.reset();
   };
 
   const tabs = [
@@ -210,9 +206,9 @@ const Search = () => {
                       onChange={(e) => handleFilterChange('sort_by', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="relevance">Relevance</option>
-                      <option value="date">Date</option>
-                      <option value="distance">Distance</option>
+                      {/* Orders supported by /api/search: upcoming events first, or newest created */}
+                      <option value="relevance">Upcoming first</option>
+                      <option value="created_at">Newest</option>
                     </select>
                   </div>
                 </div>

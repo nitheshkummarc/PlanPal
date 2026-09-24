@@ -9,7 +9,6 @@ def test_dev_config_boots_without_raising():
 @pytest.mark.parametrize("missing_var", [
     'SECRET_KEY',
     'JWT_SECRET_KEY',
-    'ENCRYPTION_KEY',
     'SUPABASE_DATABASE_URL',
     'ALLOWED_ORIGINS'
 ])
@@ -17,7 +16,6 @@ def test_production_config_raises_when_missing(monkeypatch, missing_var):
     # Set all required vars first
     monkeypatch.setenv('SECRET_KEY', 'some-secret-key-123')
     monkeypatch.setenv('JWT_SECRET_KEY', 'some-jwt-secret-key-123')
-    monkeypatch.setenv('ENCRYPTION_KEY', 'some-encryption-key-123')
     monkeypatch.setenv('SUPABASE_DATABASE_URL', 'postgresql://user:pass@db:5432/db')
     monkeypatch.setenv('ALLOWED_ORIGINS', 'https://example.com')
 
@@ -32,7 +30,6 @@ def test_production_config_raises_when_missing(monkeypatch, missing_var):
 def test_production_config_passes_when_all_set(monkeypatch):
     monkeypatch.setenv('SECRET_KEY', 'some-secret-key-123')
     monkeypatch.setenv('JWT_SECRET_KEY', 'some-jwt-secret-key-123')
-    monkeypatch.setenv('ENCRYPTION_KEY', 'some-encryption-key-123')
     monkeypatch.setenv('SUPABASE_DATABASE_URL', 'postgresql://user:pass@db:5432/db')
     monkeypatch.setenv('ALLOWED_ORIGINS', 'https://example.com')
 

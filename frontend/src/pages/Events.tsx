@@ -13,11 +13,8 @@ import { tagsApi } from '../api/tagsApi';
 import EventCard from '../components/ui/EventCard';
 import TagChip from '../components/ui/TagChip';
 import { useApi, useDebounce } from '../hooks/useApi';
-import { useAuth } from '../context/AuthContext';
-import toast from 'react-hot-toast';
 
 const Events = () => {
-  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
   const [selectedTags, setSelectedTags] = useState<any[]>([]);
@@ -25,8 +22,7 @@ const Events = () => {
     location: searchParams.get('location') || '',
     date_from: searchParams.get('date_from') || '',
     date_to: searchParams.get('date_to') || '',
-    category: searchParams.get('category') || 'all',
-    sort_by: searchParams.get('sort_by') || 'date'
+    sort_by: searchParams.get('sort_by') || 'date'  // 'date' = soonest first, 'created_at' = newest
   });
   const [showFilters, setShowFilters] = useState(false);
 
@@ -68,7 +64,6 @@ const Events = () => {
     if (filters.location) params.set('location', filters.location);
     if (filters.date_from) params.set('date_from', filters.date_from);
     if (filters.date_to) params.set('date_to', filters.date_to);
-    if (filters.category !== 'all') params.set('category', filters.category);
     if (filters.sort_by !== 'date') params.set('sort_by', filters.sort_by);
 
     setSearchParams(params);
@@ -105,8 +100,8 @@ const Events = () => {
         await fetchAllEvents(eventParams);
       }
     } catch (error) {
+      // useApi already showed the error toast
       console.error('Failed to load events:', error);
-      toast.error('Failed to load events');
     }
   };
 
@@ -133,7 +128,6 @@ const Events = () => {
       location: '',
       date_from: '',
       date_to: '',
-      category: 'all',
       sort_by: 'date'
     });
     resetEventsData();
@@ -266,8 +260,7 @@ const Events = () => {
                         onChange={(e) => handleFilterChange('sort_by', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
-                        <option value="date">Date</option>
-                        <option value="distance">Distance</option>
+                        <option value="date">Date (soonest first)</option>
                         <option value="created_at">Newest</option>
                       </select>
                     </div>

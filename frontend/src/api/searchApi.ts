@@ -1,46 +1,46 @@
 /**
  * searchApi.ts - Search API Service
  *
- * Why: Handles search HTTP requests across events, users, tags
+ * Why: Handles search HTTP requests across events, users, tags.
+ * All functions call GET /api/search/ (see backend/app/routes/search.py).
  */
 
 import axiosInstance from '../services/axiosInstance';
 import type { AppEvent, AppUser, AppTag } from '../types';
-import type { ApiError } from '../types/api';
-import axios from 'axios';
 
 interface SearchParams {
   type?: 'all' | 'events' | 'users' | 'tags';
-  limit?: number;
-  tag_ids?: string;
+  limit?: number;               // 1-100, default 50
+  tag_ids?: string;             // comma-separated tag UUIDs
   location?: string;
-  sort_by?: string;
+  date_from?: string;
+  date_to?: string;
+  sort_by?: string;             // 'relevance'/'date' = upcoming first; 'created_at' = newest first
   [key: string]: string | number | undefined;
 }
 
 interface SearchResults {
   events?: AppEvent[];
-  users?: AppUser[];
+  users?: AppUser[];            // public fields only (no email)
   tags?: AppTag[];
 }
 
 interface SearchResponse {
   query: string;
+  tag_ids?: string[];
   results: SearchResults;
 }
 
-interface EventSearchResponse {
-  events: AppEvent[];
-  pagination?: {
-    page: number;
-    per_page: number;
-    total: number;
-    total_pages: number;
-  };
+export interface SearchSuggestion {
+  type: 'event' | 'user';
+  id: string;
+  title?: string;
+  name?: string;
+  subtitle?: string;
 }
 
 export const searchApi = {
-  // General search across events and users
+  // General search across events, users and tags
   search: async (query: string, params: SearchParams = {}): Promise<SearchResponse> => {
     const response = await axiosInstance.get<SearchResponse>('/api/search/', {
       params: { q: query, ...params }
@@ -48,7 +48,7 @@ export const searchApi = {
     return response.data;
   },
 
-  // Search events (using main search endpoint with type filter)
+  // Search events only (past events included, upcoming first)
   searchEvents: async (query: string, params: SearchParams = {}): Promise<SearchResponse> => {
     const response = await axiosInstance.get<SearchResponse>('/api/search/', {
       params: { q: query, type: 'events', ...params }
@@ -56,80 +56,26 @@ export const searchApi = {
     return response.data;
   },
 
-  // Search users (using main search endpoint with type filter)
-  searchUsers: async (query: string, params: SearchParams = {}): Promise<SearchResponse> => {
-    const response = await axiosInstance.get<SearchResponse>('/api/search/', {
-      params: { q: query, type: 'users', ...params }
-    });
-    return response.data;
-  },
-
-  // Search tags (using main search endpoint with type filter)
-  searchTags: async (query: string, params: SearchParams = {}): Promise<SearchResponse> => {
-    const response = await axiosInstance.get<SearchResponse>('/api/search/', {
-      params: { q: query, type: 'tags', ...params }
-    });
-    return response.data;
-  },
-
-  // Advanced event search (fallback to events API)
-  advancedEventSearch: async (filters: SearchParams): Promise<EventSearchResponse> => {
-    const response = await axiosInstance.get<EventSearchResponse>('/api/events/', { params: filters });
-    return response.data;
-  },
-
-  // Get search suggestions (fallback)
-  getSearchSuggestions: async (query: string, type: string = 'all'): Promise<any> => {
+  // Suggestions for the navbar search box; never throws (returns [] on error)
+  getSearchSuggestions: async (query: string, type: string = 'all'): Promise<{ suggestions: SearchSuggestion[] }> => {
     try {
       const response = await axiosInstance.get<SearchResponse>('/api/search/', {
         params: { q: query, type, limit: 5 }
       });
-      
-      const suggestions = [];
+
+      const suggestions: SearchSuggestion[] = [];
       const results = response.data.results || {};
-      
-      if (results.events) {
-        results.events.forEach((event: AppEvent) => {
-          suggestions.push({ type: 'event', id: event.event_id, title: event.title, subtitle: event.place });
-        });
-      }
-      if (results.users) {
-        results.users.forEach((user: AppUser) => {
-          suggestions.push({ type: 'user', id: user.user_id, name: user.name, subtitle: `@${user.username}` });
-        });
-      }
-      
+
+      (results.events || []).forEach((event: AppEvent) => {
+        suggestions.push({ type: 'event', id: event.event_id, title: event.title, subtitle: event.place });
+      });
+      (results.users || []).forEach((user: AppUser) => {
+        suggestions.push({ type: 'user', id: user.user_id, name: user.name, subtitle: `@${user.username}` });
+      });
+
       return { suggestions };
     } catch {
       return { suggestions: [] };
-    }
-  },
-
-  // Search by location (using events API)
-  searchByLocation: async (location: string, _radius = 25, params: SearchParams = {}): Promise<EventSearchResponse> => {
-    const response = await axiosInstance.get<EventSearchResponse>('/api/events/', {
-      params: { location, ...params }
-    });
-    return response.data;
-  },
-
-  // Search by tags (using events API)
-  searchByTags: async (tagIds: string[], params: SearchParams = {}): Promise<EventSearchResponse> => {
-    const response = await axiosInstance.get<EventSearchResponse>('/api/events/', {
-      params: { tag_ids: tagIds.join(','), ...params }
-    });
-    return response.data;
-  },
-
-  // Auto-complete search (fallback)
-  autoComplete: async (query: string, type: string = 'all'): Promise<SearchResponse> => {
-    try {
-      const response = await axiosInstance.get<SearchResponse>('/api/search/', {
-        params: { q: query, type, limit: 3 }
-      });
-      return response.data;
-    } catch {
-      return { query, results: {} };
     }
   },
 };

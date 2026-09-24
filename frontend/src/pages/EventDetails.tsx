@@ -1,25 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
   CalendarDaysIcon,
   MapPinIcon,
-  ClockIcon,
   UsersIcon,
   ShareIcon,
-  HeartIcon,
   TrashIcon,
   ChevronLeftIcon,
   ExclamationTriangleIcon,
-  CurrencyRupeeIcon
+  CurrencyRupeeIcon,
+  UserIcon
 } from '@heroicons/react/24/outline';
-import { HeartIcon as HeartSolidIcon } from '@heroicons/react/24/solid';
-import { eventsApi } from '../api/eventsApi';
+import { eventsApi, type EventParticipant } from '../api/eventsApi';
 import { LoadingSpinner, LoadingButton } from '../components/ui/Loading';
 import TagChip from '../components/ui/TagChip';
 import { useApi } from '../hooks/useApi';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, formatTime } from '../utils/dateUtils';
 import toast from 'react-hot-toast';
+import { getApiErrorMessage, notifyEventsChanged } from '../utils/helpers';
+
+type ParticipationState = 'going' | 'interested' | 'not_joined';
 
 const EventDetails = () => {
   const { id: eventId } = useParams<{ id: string }>();
@@ -28,8 +29,8 @@ const EventDetails = () => {
   const [isJoining, setIsJoining] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [participationStatus, setParticipationStatus] = useState<any>(null);
-  const [isLiked, setIsLiked] = useState(false);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [participationStatus, setParticipationStatus] = useState<ParticipationState>('not_joined');
 
   const {
     data: eventRaw,
@@ -40,30 +41,38 @@ const EventDetails = () => {
 
   const event = eventRaw && (eventRaw as any).event ? (eventRaw as any).event : eventRaw;
 
-  const {
-    execute: getParticipationStatus
-  } = useApi(eventsApi.getParticipationStatus);
-
   useEffect(() => {
     if (eventId) {
       fetchEventRaw(eventId);
-      loadParticipationStatus();
     }
   }, [eventId]);
 
+  // Re-check once the logged-in user is known (auth loads asynchronously)
+  useEffect(() => {
+    if (eventId) {
+      loadParticipationStatus();
+    }
+  }, [eventId, user?.user_id]);
+
   const loadParticipationStatus = async () => {
-    if (!user) {
-      setParticipationStatus({ status: 'not_joined' });
+    if (!user || !eventId) {
+      setParticipationStatus('not_joined');
       return;
     }
 
     try {
-      const status = await getParticipationStatus(eventId);
-      setParticipationStatus(status);
+      const result = await eventsApi.getParticipationStatus(eventId);
+      setParticipationStatus(result.status);
     } catch (error) {
       console.error('Failed to load participation status:', error);
-      setParticipationStatus({ status: 'not_joined' });
+      setParticipationStatus('not_joined');
     }
+  };
+
+  /** Reload this page's data and tell other pages (Dashboard, Calendar) to refresh. */
+  const refreshAfterChange = async () => {
+    await Promise.all([fetchEventRaw(eventId), loadParticipationStatus()]);
+    notifyEventsChanged();
   };
 
   const handleJoinEvent = async () => {
@@ -77,18 +86,10 @@ const EventDetails = () => {
       setIsJoining(true);
       await eventsApi.joinEvent(eventId!);
       toast.success('Successfully joined the event!');
-      await Promise.all([
-        fetchEventRaw(eventId),
-        loadParticipationStatus()
-      ]);
-
-      setTimeout(() => {
-        localStorage.setItem('eventUpdated', Date.now().toString());
-        window.dispatchEvent(new CustomEvent('eventUpdated'));
-      }, 100);
-    } catch (error: any) {
+      await refreshAfterChange();
+    } catch (error: unknown) {
       console.error('Join event error:', error);
-      toast.error(error.response?.data?.message || error.response?.data?.error || 'Failed to join event');
+      toast.error(getApiErrorMessage(error, 'Failed to join event'));
     } finally {
       setIsJoining(false);
     }
@@ -105,17 +106,27 @@ const EventDetails = () => {
       setIsLeaving(true);
       await eventsApi.leaveEvent(eventId!);
       toast.success('Successfully left the event');
-      await Promise.all([
-        fetchEventRaw(eventId),
-        loadParticipationStatus()
-      ]);
-      localStorage.setItem('eventUpdated', Date.now().toString());
-      window.dispatchEvent(new CustomEvent('eventUpdated'));
-    } catch (error: any) {
+      await refreshAfterChange();
+    } catch (error: unknown) {
       console.error('Leave event error:', error);
-      toast.error(error.response?.data?.message || error.response?.data?.error || 'Failed to leave event');
+      toast.error(getApiErrorMessage(error, 'Failed to leave event'));
     } finally {
       setIsLeaving(false);
+    }
+  };
+
+  // Switch between 'interested' and 'going' (joining starts as 'interested')
+  const handleStatusChange = async (status: 'interested' | 'going') => {
+    if (status === participationStatus) return;
+    try {
+      setIsUpdatingStatus(true);
+      await eventsApi.updateEventStatus(eventId!, status);
+      toast.success(status === 'going' ? "You're going!" : 'Marked as interested');
+      await refreshAfterChange();
+    } catch (error: unknown) {
+      toast.error(getApiErrorMessage(error, 'Failed to update your status'));
+    } finally {
+      setIsUpdatingStatus(false);
     }
   };
 
@@ -126,7 +137,7 @@ const EventDetails = () => {
       return;
     }
 
-    const confirmed = window.confirm('Delete this event? This removes its participants and tag links.');
+    const confirmed = window.confirm('Delete this event? Participants will be notified and it cannot be undone.');
     if (!confirmed) {
       return;
     }
@@ -135,12 +146,11 @@ const EventDetails = () => {
       setIsDeleting(true);
       await eventsApi.deleteEvent(eventId!);
       toast.success('Event deleted successfully');
-      localStorage.setItem('eventUpdated', Date.now().toString());
-      window.dispatchEvent(new CustomEvent('eventUpdated'));
+      notifyEventsChanged();
       navigate('/events');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Delete event error:', error);
-      toast.error(error.response?.data?.message || error.response?.data?.error || 'Failed to delete event');
+      toast.error(getApiErrorMessage(error, 'Failed to delete event'));
     } finally {
       setIsDeleting(false);
     }
@@ -195,13 +205,15 @@ const EventDetails = () => {
     );
   }
 
-  const isOwner = user?.user_id === event.posted_by || user?.user_id === event.created_by?.user_id;
-  const isParticipant = participationStatus?.status === 'going' || participationStatus?.status === 'interested';
+  const participants: EventParticipant[] = event.participants || [];
+  const isOwner = user?.user_id === event.posted_by;
+  const isParticipant = participationStatus === 'going' || participationStatus === 'interested';
   const isEventPast = new Date(event.timestamp) < new Date();
-  const canJoin = user && !isOwner && !isParticipant && !isEventPast && (event.status === 'upcoming' || !event.status);
-  const canLeave = user && isParticipant && !isOwner;
+  const canJoin = user && !isOwner && !isParticipant && !isEventPast;
+  const canLeave = user && isParticipant && !isOwner && !isEventPast;
+  const canChangeStatus = canLeave;
   const canEdit = user && isOwner && !isEventPast;
-  const canDelete = user && (isOwner || (user as any).role === 'admin');
+  const canDelete = user && (isOwner || user.role === 'admin');
   const isEventFull = event.max_participants && typeof event.current_participants === 'number' && event.current_participants >= event.max_participants;
 
   return (
@@ -223,14 +235,11 @@ const EventDetails = () => {
                   <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
                     {event.title}
                   </h1>
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                    event.status === 'upcoming' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
-                    event.status === 'ongoing' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400' :
-                    event.status === 'completed' ? 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400' :
-                    'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
-                  }`}>
-                    {event.status}
-                  </span>
+                  {isEventPast && (
+                    <span className="px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400">
+                      Past event
+                    </span>
+                  )}
 
                   {event.is_paid && (
                     <span className="px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400 flex items-center gap-1">
@@ -239,12 +248,6 @@ const EventDetails = () => {
                     </span>
                   )}
                 </div>
-
-                {event.category && (
-                  <p className="text-gray-600 dark:text-gray-400 mb-2">
-                    {event.category}
-                  </p>
-                )}
 
                 {event.is_paid && event.price && (
                   <div className="flex items-center gap-2 mb-4">
@@ -265,17 +268,6 @@ const EventDetails = () => {
                 >
                   <ShareIcon className="h-5 w-5" />
                 </button>
-                <button 
-                  onClick={() => setIsLiked(!isLiked)}
-                  className={`p-2 transition-colors ${isLiked ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}
-                  title={isLiked ? "Unlike event" : "Like event"}
-                >
-                  {isLiked ? (
-                    <HeartSolidIcon className="h-5 w-5" />
-                  ) : (
-                    <HeartIcon className="h-5 w-5" />
-                  )}
-                </button>
               </div>
             </div>
 
@@ -284,9 +276,9 @@ const EventDetails = () => {
                 <div className="flex items-start gap-3">
                   <CalendarDaysIcon className="h-5 w-5 text-gray-400 mt-0.5 flex-shrink-0" />
                   <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Date</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Date &amp; time</p>
                     <p className="text-gray-900 dark:text-white font-medium">
-                      {event.timestamp ? formatDate(event.timestamp) : 'N/A'}
+                      {event.timestamp ? `${formatDate(event.timestamp)} · ${formatTime(event.timestamp)}` : 'N/A'}
                     </p>
                   </div>
                 </div>
@@ -318,35 +310,26 @@ const EventDetails = () => {
                     <p className="text-gray-900 dark:text-white font-medium">
                       {typeof event.current_participants === 'number' && event.current_participants >= 0
                         ? event.current_participants
-                        : (event.participants ? event.participants.length : 0)}
+                        : participants.length}
                       {event.max_participants ? ` / ${event.max_participants}` : ''} people
                     </p>
-                    {event.max_participants && typeof event.current_participants === 'number' && event.current_participants >= event.max_participants && (
+                    {isEventFull && (
                       <p className="text-red-600 dark:text-red-400 text-sm">Event is full</p>
                     )}
                   </div>
                 </div>
 
-                {event.duration && (
-                  <div className="flex items-start gap-3">
-                    <ClockIcon className="h-5 w-5 text-gray-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Duration</p>
-                      <p className="text-gray-900 dark:text-white font-medium">
-                        {event.duration} minutes
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {event.created_by && (
+                {event.creator_name && (
                   <div className="flex items-start gap-3">
                     <div className="h-5 w-5 bg-blue-600 rounded-full mt-0.5 flex-shrink-0"></div>
                     <div>
                       <p className="text-sm text-gray-500 dark:text-gray-400">Organized by</p>
-                      <p className="text-gray-900 dark:text-white font-medium">
-                        {event.created_by.name || event.created_by.username}
-                      </p>
+                      <Link
+                        to={`/users/${event.posted_by}`}
+                        className="text-gray-900 dark:text-white font-medium hover:underline"
+                      >
+                        {event.creator_name}
+                      </Link>
                     </div>
                   </div>
                 )}
@@ -377,13 +360,41 @@ const EventDetails = () => {
               </div>
             )}
 
+            {participants.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+                  Who's coming ({participants.length})
+                </h3>
+                <ul className="flex flex-wrap gap-2">
+                  {participants.map((participant) => (
+                    <li key={participant.user_id}>
+                      <Link
+                        to={`/users/${participant.user_id}`}
+                        className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-sm text-gray-800 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+                      >
+                        {participant.profile_image_url ? (
+                          <img src={participant.profile_image_url} alt="" className="h-5 w-5 rounded-full object-cover" />
+                        ) : (
+                          <UserIcon className="h-4 w-4 text-gray-400" />
+                        )}
+                        {participant.name}
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {participant.user_id === event.posted_by ? 'organizer' : participant.status}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <div className="flex items-center justify-between pt-6 border-t border-gray-200 dark:border-gray-700">
               <div className="text-sm text-gray-500 dark:text-gray-400">
                 {!user ? (
                   <span>
-                    <a href="/login" className="text-blue-600 dark:text-blue-400 hover:underline">
+                    <Link to="/login" className="text-blue-600 dark:text-blue-400 hover:underline">
                       Log in
-                    </a>
+                    </Link>
                     {' '}to join events and participate
                   </span>
                 ) : isOwner ? (
@@ -394,18 +405,39 @@ const EventDetails = () => {
                 ) : isParticipant ? (
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span className="font-medium text-green-600 dark:text-green-400">You're participating in this event</span>
+                    <span className="font-medium text-green-600 dark:text-green-400">
+                      {participationStatus === 'going' ? "You're going to this event" : "You're interested in this event"}
+                    </span>
                   </div>
                 ) : isEventPast ? (
                   <span>This event has already passed</span>
-                ) : event.status === 'upcoming' || !event.status ? (
-                  <span>Join this event to participate</span>
                 ) : (
-                  <span>This event is {event.status}</span>
+                  <span>Join this event to participate</span>
                 )}
               </div>
 
               <div className="flex items-center gap-3">
+                {canChangeStatus && (
+                  <div className="inline-flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden" role="group" aria-label="Your participation">
+                    {(['interested', 'going'] as const).map((status) => (
+                      <button
+                        key={status}
+                        type="button"
+                        onClick={() => handleStatusChange(status)}
+                        disabled={isUpdatingStatus}
+                        aria-pressed={participationStatus === status}
+                        className={`px-3 py-2 text-sm font-medium transition-colors ${
+                          participationStatus === status
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        {status === 'going' ? 'Going' : 'Interested'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {canLeave && (
                   <LoadingButton
                     onClick={handleLeaveEvent}
@@ -430,12 +462,6 @@ const EventDetails = () => {
                   >
                     {isEventFull ? 'Event Full' : 'Join Event'}
                   </LoadingButton>
-                )}
-
-                {isParticipant && !isOwner && !canLeave && (
-                  <button className="bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400 px-4 py-2 rounded-lg font-medium cursor-default" disabled>
-                    ✓ Joined
-                  </button>
                 )}
 
                 {canEdit && (

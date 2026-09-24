@@ -14,6 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { eventsApi } from '../api/eventsApi';
 import { notificationsApi } from '../api/notificationsApi';
 import UpcomingEventCard from '../components/ui/UpcomingEventCard';
+import { onEventsChanged } from '../utils/helpers';
 import { LoadingSpinner } from '../components/ui/Loading';
 import type { AppEvent, AppNotification } from '../types';
 
@@ -47,24 +48,8 @@ const Dashboard = () => {
   useEffect(() => {
     if (!isAuthenticated || !user) return;
 
-    const handleEventUpdate = () => {
-      loadDashboardData();
-    };
-
-    window.addEventListener('eventUpdated', handleEventUpdate);
-
-    const intervalId = setInterval(() => {
-      const updateFlag = localStorage.getItem('eventUpdated');
-      if (updateFlag) {
-        loadDashboardData();
-        localStorage.removeItem('eventUpdated');
-      }
-    }, 1000);
-
-    return () => {
-      window.removeEventListener('eventUpdated', handleEventUpdate);
-      clearInterval(intervalId);
-    };
+    // Reload when events change in this tab or another tab (no polling)
+    return onEventsChanged(loadDashboardData);
   }, [isAuthenticated, user]);
 
   const loadDashboardData = async () => {

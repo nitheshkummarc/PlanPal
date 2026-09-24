@@ -1,1 +1,1 @@
-export { useApi, usePagination, useDebounce, useLocalStorage } from './useApi';
+export { useApi, usePagination, useDebounce } from './useApi';

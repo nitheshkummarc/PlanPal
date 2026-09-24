@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   UserIcon,
-  CameraIcon,
   PencilIcon,
   CalendarDaysIcon,
   KeyIcon,
@@ -12,7 +12,7 @@ import { LoadingButton } from '../components/ui/Loading';
 import TagChip from '../components/ui/TagChip';
 import { tagsApi } from '../api/tagsApi';
 import { useApi } from '../hooks/useApi';
-import { validateForm, profileSchema } from '../utils/validators';
+import { validateForm, profileSchema, validatePassword, PASSWORD_MESSAGE } from '../utils/validators';
 import toast from 'react-hot-toast';
 
 const Profile = () => {
@@ -24,7 +24,7 @@ const Profile = () => {
     username: '',
     email: '',
     bio: '',
-    profile_picture: null as File | null
+    profile_image_url: ''
   });
   const [passwordData, setPasswordData] = useState({
     current_password: '',
@@ -35,7 +35,6 @@ const Profile = () => {
   const [availableTags, setAvailableTags] = useState<any[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isUpdating, setIsUpdating] = useState(false);
-  const [profilePreview, setProfilePreview] = useState<string | null>(null);
 
   const {
     data: tagsData,
@@ -50,7 +49,7 @@ const Profile = () => {
         username: user.username || '',
         email: user.email || '',
         bio: user.bio || '',
-        profile_picture: null
+        profile_image_url: user.profile_image_url || ''
       });
 
       const userPreferences = user.preferences || (user as any).interests || [];
@@ -81,19 +80,8 @@ const Profile = () => {
   }, [tagsData, selectedInterests]);
 
   const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value, type } = e.target;
-    
-    if (type === 'file') {
-      const fileInput = e.target as HTMLInputElement;
-      const file = fileInput.files?.[0];
-      if (file) {
-        setProfileData(prev => ({ ...prev, [name]: file }));
-        const previewUrl = URL.createObjectURL(file);
-        setProfilePreview(previewUrl);
-      }
-    } else {
-      setProfileData(prev => ({ ...prev, [name]: value }));
-    }
+    const { name, value } = e.target;
+    setProfileData(prev => ({ ...prev, [name]: value }));
 
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
@@ -136,12 +124,9 @@ const Profile = () => {
         name: profileData.name,
         username: profileData.username,
         bio: profileData.bio,
+        profile_image_url: profileData.profile_image_url.trim(),
         preferences: selectedInterests.map(tag => tag.name)
       };
-
-      if (profileData.profile_picture) {
-        console.log('Image upload not implemented yet');
-      }
 
       const result = await updateProfile(updateData);
       if (result.success) {
@@ -157,6 +142,11 @@ const Profile = () => {
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Same password rules as registration and the backend
+    if (!validatePassword(passwordData.new_password)) {
+      setErrors({ new_password: PASSWORD_MESSAGE });
+      return;
+    }
     if (passwordData.new_password !== passwordData.confirm_password) {
       setErrors({ confirm_password: 'Passwords do not match' });
       return;
@@ -207,8 +197,8 @@ const Profile = () => {
           <div className="flex items-center gap-6">
             <div className="relative">
               <div className="w-24 h-24 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-                {profilePreview ? (
-                  <img src={profilePreview} alt="Profile preview" className="w-full h-full object-cover" />
+                {isEditing && profileData.profile_image_url ? (
+                  <img src={profileData.profile_image_url} alt="Profile preview" className="w-full h-full object-cover" />
                 ) : user?.profile_image_url ? (
                   <img src={user.profile_image_url} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
@@ -217,19 +207,6 @@ const Profile = () => {
                   </div>
                 )}
               </div>
-              {isEditing && (
-                <label htmlFor="profile_picture" className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full cursor-pointer hover:bg-blue-700">
-                  <CameraIcon className="h-4 w-4" />
-                  <input
-                    type="file"
-                    id="profile_picture"
-                    name="profile_picture"
-                    accept="image/*"
-                    onChange={handleProfileChange}
-                    className="hidden"
-                  />
-                </label>
-              )}
             </div>
 
             <div className="flex-1">
@@ -332,9 +309,8 @@ const Profile = () => {
                           username: user?.username || '',
                           email: user?.email || '',
                           bio: user?.bio || '',
-                          profile_picture: null
+                          profile_image_url: user?.profile_image_url || ''
                         });
-                        setProfilePreview(null);
                       }}
                       className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                     >
@@ -395,15 +371,17 @@ const Profile = () => {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Email
                   </label>
+                  {/* Email is the login identity and can't be changed here */}
                   <input
                     type="email"
                     name="email"
                     value={profileData.email}
-                    onChange={handleProfileChange}
-                    disabled={!isEditing}
-                    className={`input-field ${!isEditing ? 'bg-gray-50 dark:bg-gray-700' : ''} ${errors.email ? 'border-red-500' : ''}`}
+                    disabled
+                    className="input-field bg-gray-50 dark:bg-gray-700"
                   />
-                  {errors.email && <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.email}</p>}
+                  {isEditing && (
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Email can't be changed.</p>
+                  )}
                 </div>
 
                 <div>
@@ -421,6 +399,23 @@ const Profile = () => {
                   />
                   {errors.bio && <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.bio}</p>}
                 </div>
+
+                {isEditing && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Profile image URL
+                    </label>
+                    <input
+                      type="url"
+                      name="profile_image_url"
+                      value={profileData.profile_image_url}
+                      onChange={handleProfileChange}
+                      className={`input-field ${errors.profile_image_url ? 'border-red-500' : ''}`}
+                      placeholder="https://example.com/photo.jpg"
+                    />
+                    {errors.profile_image_url && <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.profile_image_url}</p>}
+                  </div>
+                )}
 
                 {isEditing && (
                   <div>
@@ -539,150 +534,20 @@ const Profile = () => {
 
           {activeTab === 'notifications' && (
             <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-                Notification Settings
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Notifications
               </h3>
-
-              <div className="space-y-6">
-                <div className="border-b border-gray-200 dark:border-gray-700 pb-6">
-                  <h4 className="text-base font-medium text-gray-900 dark:text-white mb-4">
-                    Email Notifications
-                  </h4>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Event Reminders
-                        </label>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          Get notified about upcoming events you've joined
-                        </p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        className="toggle toggle-blue"
-                        defaultChecked
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Event Updates
-                        </label>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          Receive updates when event details change
-                        </p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        className="toggle toggle-blue"
-                        defaultChecked
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-b border-gray-200 dark:border-gray-700 pb-6">
-                  <h4 className="text-base font-medium text-gray-900 dark:text-white mb-4">
-                    Push Notifications
-                  </h4>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Real-time Updates
-                        </label>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          Get instant notifications for important updates
-                        </p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        className="toggle toggle-blue"
-                        defaultChecked
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Event Participation
-                        </label>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          Notifications when someone joins/leaves your events
-                        </p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        className="toggle toggle-blue"
-                        defaultChecked
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-base font-medium text-gray-900 dark:text-white mb-4">
-                    Notification Frequency
-                  </h4>
-                  <div className="space-y-3">
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        name="frequency"
-                        value="instant"
-                        className="radio radio-blue mr-3"
-                        defaultChecked
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
-                        Instant - Get notifications immediately
-                      </span>
-                    </label>
-
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        name="frequency"
-                        value="daily"
-                        className="radio radio-blue mr-3"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
-                        Daily Digest - Once per day summary
-                      </span>
-                    </label>
-
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        name="frequency"
-                        value="weekly"
-                        className="radio radio-blue mr-3"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
-                        Weekly Summary - Once per week
-                      </span>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="pt-6">
-                  <button className="btn-primary">
-                    Save Notification Settings
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'preferences' && (
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-                Preferences
-              </h3>
-              <p className="text-gray-600 dark:text-gray-400">
-                Preference settings coming soon...
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                PlanPal sends in-app notifications (the bell in the navbar) when:
               </p>
+              <ul className="list-disc pl-5 space-y-1 text-gray-600 dark:text-gray-400 mb-6">
+                <li>someone joins or leaves an event you organize</li>
+                <li>an event you joined is updated or cancelled</li>
+                <li>an event you joined starts within 24 hours</li>
+              </ul>
+              <Link to="/notifications" className="btn-primary">
+                View notifications
+              </Link>
             </div>
           )}
         </div>

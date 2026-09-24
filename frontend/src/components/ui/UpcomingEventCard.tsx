@@ -10,8 +10,6 @@ import { formatDate, formatTime } from '../../utils/dateUtils';
 import type { AppEvent, AppUser } from '../../types';
 
 interface UpcomingEventData extends AppEvent {
-  creator_id?: string;
-  participant_count?: number;
   id?: string;
 }
 
@@ -28,7 +26,7 @@ const UpcomingEventCard = ({ event, user, className = "" }: UpcomingEventCardPro
     navigate(`/events/${event.event_id || event.id}`);
   };
 
-  const isOrganizer = event.creator_id === user?.user_id || event.posted_by === user?.user_id;
+  const isOrganizer = event.posted_by === user?.user_id;
 
   return (
     <div
@@ -70,10 +68,10 @@ const UpcomingEventCard = ({ event, user, className = "" }: UpcomingEventCardPro
           {isOrganizer ? 'Organizing' : 'Joined'}
         </div>
 
-        {event.participant_count !== undefined && (
+        {typeof event.current_participants === 'number' && (
           <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
             <UserIcon className="h-3 w-3" />
-            <span>{event.participant_count} going</span>
+            <span>{event.current_participants} joined</span>
           </div>
         )}
       </div>

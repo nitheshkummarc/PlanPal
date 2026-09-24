@@ -106,7 +106,6 @@ authApi.ts
 eventsApi.ts
 notificationsApi.ts
 searchApi.ts
-systemApi.ts
 tagsApi.ts
 usersApi.ts
 ```

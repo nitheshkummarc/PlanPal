@@ -18,7 +18,7 @@ Usage:
 """
 
 from dotenv import load_dotenv
-load_dotenv() 
+load_dotenv()
 from app import create_app, db
 from app.models import User, Event, Participation, Notification
 import os
@@ -44,40 +44,65 @@ def health_check():
 
 @app.route('/api')
 def api_endpoints():
-    """List all available API endpoints"""
+    """List all available API endpoints (keep in sync with app/routes/*)"""
     return {
-        'message': 'PlanPal+ API Endpoints',
+        'message': 'PlanPal API Endpoints',
         'endpoints': {
             'auth': {
                 'POST /api/auth/register': 'Register new user',
                 'POST /api/auth/login': 'Login user',
-                'POST /api/auth/logout': 'Logout user',
-                'POST /api/auth/refresh': 'Refresh JWT token',
-                'GET /api/auth/profile': 'Get user profile',
-                'PUT /api/auth/profile': 'Update user profile',
+                'POST /api/auth/logout': 'Logout (revokes tokens)',
+                'POST /api/auth/refresh': 'Get a new access token',
+                'GET /api/auth/profile': 'Get your profile',
+                'PUT /api/auth/profile': 'Update your profile',
                 'POST /api/auth/change-password': 'Change password'
             },
             'users': {
                 'GET /api/users/profile': 'Get current user profile',
                 'GET /api/users/search': 'Search users',
-                'GET /api/users/<user_id>': 'Get specific user'
+                'GET /api/users/<user_id>': 'Get a user\'s public profile'
             },
             'events': {
-                'GET /api/events/': 'List all events',
+                'GET /api/events/': 'List upcoming events',
                 'POST /api/events/': 'Create new event',
-                'GET /api/events/<event_id>': 'Get specific event',
+                'GET /api/events/<event_id>': 'Get event details',
+                'PUT /api/events/<event_id>': 'Update event (creator)',
+                'DELETE /api/events/<event_id>': 'Delete event (creator or admin)',
                 'POST /api/events/<event_id>/join': 'Join event',
                 'DELETE /api/events/<event_id>/leave': 'Leave event',
-                'PUT /api/events/<event_id>/update-status': 'Update participation status',
-                'GET /api/events/my-events': 'Get user events',
-                'GET /api/events/recommendations': 'Get recommended events'
+                'PUT /api/events/<event_id>/update-status': 'Set participation status (interested/going)',
+                'GET /api/events/<event_id>/participation_status': 'Your participation status',
+                'GET /api/events/my': 'Events you created',
+                'GET /api/events/joined': 'Events you joined'
             },
             'notifications': {
-                'GET /api/notifications/': 'Get user notifications',
-                'POST /api/notifications/': 'Create notification',
+                'GET /api/notifications/': 'Get your notifications',
+                'POST /api/notifications/': 'Create a notification for yourself',
+                'DELETE /api/notifications/': 'Delete all your notifications',
                 'PUT /api/notifications/<id>/mark-read': 'Mark notification as read',
+                'PUT /api/notifications/<id>/mark-unread': 'Mark notification as unread',
                 'PUT /api/notifications/mark-all-read': 'Mark all notifications as read',
-                'DELETE /api/notifications/<id>': 'Delete notification'
+                'DELETE /api/notifications/<id>': 'Delete notification',
+                'GET /api/notifications/types': 'List notification types',
+                'GET /api/notifications/unread_count': 'Unread notification count',
+                'POST /api/notifications/test': 'Send yourself a test notification'
+            },
+            'search': {
+                'GET /api/search/': 'Search events, users and tags'
+            },
+            'tags': {
+                'GET /api/tags/': 'List tags',
+                'GET /api/tags/search': 'Search tags',
+                'GET /api/tags/popular': 'Most used tags',
+                'GET /api/tags/<tag_id>': 'Tag details',
+                'POST /api/tags/': 'Create tag (admin)',
+                'PUT /api/tags/<tag_id>': 'Update tag (admin)',
+                'DELETE /api/tags/<tag_id>': 'Delete tag (admin)'
+            },
+            'system': {
+                'GET /api/system/health': 'Liveness probe',
+                'GET /api/system/ready': 'Readiness probe (checks the database)',
+                'GET /api/system/version': 'API version'
             }
         }
     }
