@@ -1,310 +1,126 @@
 """
-notifications.py - Notification Management Routes
+The current user's notifications. Notifications are created by the application
+(see NotificationService and the task scheduler), never directly by clients.
 
-Why: Lets users list and manage their own notifications
-
-Routes/Functions:
-- get_notifications(): GET /api/notifications/ - List user notifications (JWT required)
-- create_notification(): POST /api/notifications/ - Create notification for yourself (JWT required)
-- mark_notification_read(): PUT /api/notifications/<id>/mark-read - Mark as read (JWT required)
-- mark_notification_unread(): PUT /api/notifications/<id>/mark-unread - Mark as unread (JWT required)
-- mark_all_notifications_read(): PUT /api/notifications/mark-all-read - Mark all read (JWT required)
-- delete_notification(): DELETE /api/notifications/<id> - Delete one (JWT required)
-- delete_all_notifications(): DELETE /api/notifications/ - Delete all (JWT required)
-- get_notification_types(): GET /api/notifications/types - List types (JWT required)
-- get_unread_count(): GET /api/notifications/unread_count - Get unread count (JWT required)
-- send_test_notification(): POST /api/notifications/test - Send test (JWT required)
-
-Every route only touches the current user's notifications (user id from the JWT).
+Routes (all require a JWT and only touch the caller's own notifications):
+- GET    /api/notifications/                 List, newest first. Query: filter=all|unread|read, page, per_page
+- GET    /api/notifications/unread_count     Unread count for the badge
+- PUT    /api/notifications/<id>/mark-read   Mark one as read
+- PUT    /api/notifications/<id>/mark-unread Mark one as unread
+- PUT    /api/notifications/mark-all-read    Mark all as read
+- DELETE /api/notifications/<id>             Delete one
+- DELETE /api/notifications/                 Delete all
 """
 
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask import Blueprint
+from flask_jwt_extended import get_jwt_identity, jwt_required
+
 from app import db
-from app.models import Notification, Event
-from app.utils.responses import error_response
-from app.utils.validators import get_json_body, validate_uuid
-import uuid as _uuid
+from app.models import Notification
+from app.utils.query_params import choice_arg, page_args, paginate
+from app.utils.responses import error_response, success_response
+from app.utils.validators import ValidationError, parse_uuid
 
 notifications_bp = Blueprint('notifications', __name__)
 
-MAX_PER_PAGE = 100
-
-# Types created by the app (see NotificationService and the task scheduler)
-NOTIFICATION_TYPES = [
-    'welcome',
-    'event_joined',
-    'event_reminder',
-    'event_update',
-    'new_participant',
-    'participant_left',
-    'event_cancelled',
-    'system_announcement'
-]
+FILTERS = ('all', 'unread', 'read')
 
 
-def _current_user_uuid():
-    return _uuid.UUID(get_jwt_identity())
+def _user_id():
+    return parse_uuid(get_jwt_identity())
 
 
-def _get_own_notification(notification_id):
-    """Look up one of the current user's notifications.
+def _unread_count(user_id):
+    return Notification.query.filter_by(user_id=user_id, is_read=False).count()
 
-    Returns (notification, None) or (None, error_response_tuple).
-    """
-    if not validate_uuid(notification_id):
-        return None, (jsonify({'error': 'Invalid notification ID format'}), 400)
-    notification = db.session.get(Notification, _uuid.UUID(notification_id))
-    if not notification:
-        return None, (jsonify({'error': 'Notification not found'}), 404)
-    # Verify ownership
-    if str(notification.user_id) != get_jwt_identity():
-        return None, (jsonify({'error': 'Unauthorized'}), 403)
+
+def _get_own_notification(raw_id):
+    """Returns (notification, error_response)."""
+    notification_id = parse_uuid(raw_id)
+    if notification_id is None:
+        raise ValidationError('Invalid notification ID format')
+    notification = db.session.get(Notification, notification_id)
+    if notification is None:
+        return None, error_response('Notification not found', 404)
+    if notification.user_id != _user_id():
+        return None, error_response('You can only access your own notifications', 403)
     return notification, None
 
 
 @notifications_bp.route('/', methods=['GET'])
 @jwt_required()
-def get_notifications():
-    try:
-        user_uuid = _current_user_uuid()
+def list_notifications():
+    user_id = _user_id()
+    page, per_page = page_args(default_per_page=20)
+    selected = choice_arg('filter', FILTERS, 'all')
 
-        # Get pagination parameters (clamped like the events endpoints)
-        page = max(request.args.get('page', 1, type=int) or 1, 1)
-        per_page = request.args.get('per_page', request.args.get('limit', 20), type=int) or 20
-        per_page = min(max(per_page, 1), MAX_PER_PAGE)
+    query = Notification.query.filter_by(user_id=user_id)
+    if selected != 'all':
+        query = query.filter_by(is_read=(selected == 'read'))
+    query = query.order_by(Notification.created_at.desc(), Notification.notification_id)
 
-        # Support both legacy and new filter semantics
-        filter_value = request.args.get('filter', '').strip().lower()
-        unread_only = request.args.get('unread_only', 'false').lower() == 'true' or filter_value == 'unread'
-        read_only = filter_value == 'read'
+    notifications, pagination = paginate(query, page, per_page)
+    return success_response({
+        'notifications': [notification.to_dict() for notification in notifications],
+        'pagination': pagination,
+        'unread_count': _unread_count(user_id),
+    })
 
-        # Build query
-        query = Notification.query.filter_by(user_id=user_uuid)
-
-        if unread_only:
-            query = query.filter_by(is_read=False)
-        elif read_only:
-            query = query.filter_by(is_read=True)
-
-        # Order by creation time (newest first)
-        query = query.order_by(Notification.created_at.desc())
-
-        # Paginate results
-        notifications = query.paginate(
-            page=page,
-            per_page=per_page,
-            error_out=False
-        )
-
-        return jsonify({
-            'notifications': [notification.to_dict() for notification in notifications.items],
-            'pagination': {
-                'page': notifications.page,
-                'pages': notifications.pages,
-                'per_page': notifications.per_page,
-                'total': notifications.total
-            },
-            # Total unread across all pages (for badges)
-            'unread_count': Notification.query.filter_by(
-                user_id=user_uuid,
-                is_read=False
-            ).count()
-        }), 200
-
-    except Exception as e:
-        return error_response('Failed to fetch notifications', exc=e)
-
-@notifications_bp.route('/', methods=['POST'])
-@jwt_required()
-def create_notification():
-    """Create a notification for the current user (user_id in the body is ignored)."""
-    try:
-        user_uuid = _current_user_uuid()
-        data = get_json_body()
-
-        # Validate required fields
-        required_fields = ['type', 'title', 'message']
-        for field in required_fields:
-            if not data.get(field):
-                return jsonify({'error': f'{field} is required'}), 400
-
-        # Validate event exists if provided
-        event_id = None
-        if data.get('event_id'):
-            if not validate_uuid(data['event_id']):
-                return jsonify({'error': 'Invalid event ID format'}), 400
-            event_id = _uuid.UUID(str(data['event_id']))
-            if not db.session.get(Event, event_id):
-                return jsonify({'error': 'Event not found'}), 404
-
-        # Create notification
-        notification = Notification(
-            user_id=user_uuid,
-            event_id=event_id,
-            type=data['type'],
-            title=data['title'],
-            message=data['message']
-        )
-
-        db.session.add(notification)
-        db.session.commit()
-
-        return jsonify({
-            'message': 'Notification created successfully',
-            'notification': notification.to_dict()
-        }), 201
-
-    except Exception as e:
-        db.session.rollback()
-        return error_response('Failed to create notification', exc=e)
-
-@notifications_bp.route('/<notification_id>/mark-read', methods=['PUT'])
-@jwt_required()
-def mark_notification_read(notification_id):
-    try:
-        notification, error = _get_own_notification(notification_id)
-        if error:
-            return error
-
-        # Mark as read
-        notification.is_read = True
-        db.session.commit()
-
-        return jsonify({
-            'message': 'Notification marked as read',
-            'notification': notification.to_dict()
-        }), 200
-
-    except Exception as e:
-        db.session.rollback()
-        return error_response('Failed to mark notification as read', exc=e)
-
-@notifications_bp.route('/<notification_id>/mark-unread', methods=['PUT'])
-@jwt_required()
-def mark_notification_unread(notification_id):
-    try:
-        notification, error = _get_own_notification(notification_id)
-        if error:
-            return error
-
-        # Mark as unread
-        notification.is_read = False
-        db.session.commit()
-
-        return jsonify({
-            'message': 'Notification marked as unread',
-            'notification': notification.to_dict()
-        }), 200
-
-    except Exception as e:
-        db.session.rollback()
-        return error_response('Failed to mark notification as unread', exc=e)
-
-@notifications_bp.route('/mark-all-read', methods=['PUT'])
-@jwt_required()
-def mark_all_notifications_read():
-    try:
-        # Mark all unread notifications as read
-        Notification.query.filter_by(
-            user_id=_current_user_uuid(),
-            is_read=False
-        ).update({'is_read': True})
-
-        db.session.commit()
-
-        return jsonify({
-            'message': 'All notifications marked as read'
-        }), 200
-
-    except Exception as e:
-        db.session.rollback()
-        return error_response('Failed to mark all notifications as read', exc=e)
-
-@notifications_bp.route('/<notification_id>', methods=['DELETE'])
-@jwt_required()
-def delete_notification(notification_id):
-    try:
-        notification, error = _get_own_notification(notification_id)
-        if error:
-            return error
-
-        # Delete notification
-        db.session.delete(notification)
-        db.session.commit()
-
-        return jsonify({
-            'message': 'Notification deleted successfully'
-        }), 200
-
-    except Exception as e:
-        db.session.rollback()
-        return error_response('Failed to delete notification', exc=e)
-
-@notifications_bp.route('/', methods=['DELETE'])
-@jwt_required()
-def delete_all_notifications():
-    """Delete all notifications for current user"""
-    try:
-        # Delete all notifications for the user
-        deleted_count = Notification.query.filter_by(user_id=_current_user_uuid()).delete()
-        db.session.commit()
-
-        return jsonify({
-            'message': 'All notifications deleted successfully',
-            'deleted_count': deleted_count
-        }), 200
-
-    except Exception as e:
-        db.session.rollback()
-        return error_response('Failed to delete all notifications', exc=e)
-
-@notifications_bp.route('/types', methods=['GET'])
-@jwt_required()
-def get_notification_types():
-    """Get available notification types"""
-    return jsonify({
-        'types': NOTIFICATION_TYPES
-    }), 200
 
 @notifications_bp.route('/unread_count', methods=['GET'])
 @jwt_required()
 def get_unread_count():
-    """Get count of unread notifications for badge display"""
-    try:
-        unread_count = Notification.query.filter_by(
-            user_id=_current_user_uuid(),
-            is_read=False
-        ).count()
+    return success_response({'unread_count': _unread_count(_user_id())})
 
-        return jsonify({
-            'unread_count': unread_count
-        }), 200
 
-    except Exception as e:
-        return error_response('Failed to get unread count', exc=e)
+def _set_read(raw_id, is_read):
+    notification, error = _get_own_notification(raw_id)
+    if error:
+        return error
+    notification.is_read = is_read
+    db.session.commit()
+    return success_response({
+        'message': f"Notification marked as {'read' if is_read else 'unread'}",
+        'notification': notification.to_dict(),
+    })
 
-@notifications_bp.route('/test', methods=['POST'])
+
+@notifications_bp.route('/<notification_id>/mark-read', methods=['PUT'])
 @jwt_required()
-def send_test_notification():
-    """Send a test notification to the current user"""
-    try:
-        # Create test notification
-        notification = Notification(
-            user_id=_current_user_uuid(),
-            type='system_announcement',
-            title='Test Notification',
-            message='This is a test notification to verify the system is working correctly.'
-        )
+def mark_read(notification_id):
+    return _set_read(notification_id, True)
 
-        db.session.add(notification)
-        db.session.commit()
 
-        return jsonify({
-            'message': 'Test notification sent successfully',
-            'notification': notification.to_dict()
-        }), 200
+@notifications_bp.route('/<notification_id>/mark-unread', methods=['PUT'])
+@jwt_required()
+def mark_unread(notification_id):
+    return _set_read(notification_id, False)
 
-    except Exception as e:
-        db.session.rollback()
-        return error_response('Failed to send test notification', exc=e)
+
+@notifications_bp.route('/mark-all-read', methods=['PUT'])
+@jwt_required()
+def mark_all_read():
+    updated = Notification.query.filter_by(user_id=_user_id(), is_read=False).update(
+        {'is_read': True}, synchronize_session=False,
+    )
+    db.session.commit()
+    return success_response({'message': 'All notifications marked as read', 'updated_count': updated})
+
+
+@notifications_bp.route('/<notification_id>', methods=['DELETE'])
+@jwt_required()
+def delete_notification(notification_id):
+    notification, error = _get_own_notification(notification_id)
+    if error:
+        return error
+    db.session.delete(notification)
+    db.session.commit()
+    return success_response({'message': 'Notification deleted successfully'})
+
+
+@notifications_bp.route('/', methods=['DELETE'])
+@jwt_required()
+def delete_all_notifications():
+    deleted = Notification.query.filter_by(user_id=_user_id()).delete(synchronize_session=False)
+    db.session.commit()
+    return success_response({'message': 'All notifications deleted successfully', 'deleted_count': deleted})

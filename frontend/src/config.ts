@@ -1,31 +1,28 @@
 /**
- * config.ts - Frontend runtime configuration (single source of truth)
+ * config.ts - Runtime configuration derived from Vite environment variables.
  *
- * Why: Centralizes feature flags derived from Vite env vars so that
- *      AuthContext and axiosInstance read from one place instead of
- *      each hardcoding their own copy of a flag.
- *
- * Env vars (declared in src/env.d.ts):
- *   VITE_API_BASE_URL  - backend origin (default http://localhost:5000)
- *   VITE_BYPASS_AUTH   - 'true' enables offline UI-preview mode with a
- *                        mock API adapter and a hardcoded test user.
- *                        ANY other value (including unset) = real backend.
- *
- * Security: BYPASS_AUTH defaults to FALSE. It must be explicitly opted into
- *           via the environment; production builds must never set it.
+ * VITE_API_BASE_URL: backend origin, e.g. https://api.example.com.
+ *   Unset:  http://localhost:5000 (local development).
+ *   '/':    same origin as the page (the Docker setup proxies /api through nginx).
  */
 
-// Read once at module load. Coerce to a strict boolean so consumers can't
-// accidentally compare against the raw string.
-const rawBypass = import.meta.env?.VITE_BYPASS_AUTH ?? (typeof process !== 'undefined' ? process.env.VITE_BYPASS_AUTH : undefined);
-// Never active in a production build, even if the variable is set by mistake
-// (e.g. copied into the Vercel environment).
-const isProductionBuild = import.meta.env?.PROD === true;
-export const BYPASS_AUTH: boolean = rawBypass === 'true' && !isProductionBuild;
+const DEFAULT_API_BASE_URL = 'http://localhost:5000';
+
+const isLocalHttp = (url: string): boolean => /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?/.test(url);
 
 /**
- * True when the app is running under the Vite/Vitest test runner.
- * Used to avoid side-effects (e.g. localStorage noise) during unit tests.
+ * Normalise the configured API origin: no trailing slash ('' means same origin), and
+ * never plain HTTP to a remote host from an HTTPS page (mixed content would be blocked).
  */
-export const IS_TEST_ENV: boolean =
-  typeof import.meta !== 'undefined' && (import.meta as { env?: Record<string, unknown> }).env?.MODE === 'test';
+export const resolveApiBaseUrl = (configured: string | undefined, pageProtocol: string | undefined): string => {
+  const url = (configured ?? DEFAULT_API_BASE_URL).trim().replace(/\/+$/, '');
+  if (pageProtocol === 'https:' && url.startsWith('http://') && !isLocalHttp(url)) {
+    return url.replace(/^http:\/\//, 'https://');
+  }
+  return url;
+};
+
+export const API_BASE_URL = resolveApiBaseUrl(
+  import.meta.env.VITE_API_BASE_URL,
+  typeof window !== 'undefined' ? window.location.protocol : undefined
+);

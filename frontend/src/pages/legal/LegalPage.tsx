@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom';
 
 // Where users can reach the maintainer (the project's public repository)
 export const CONTACT_URL = 'https://github.com/nitheshkummarc/PlanPal/issues';
-export const LAST_UPDATED = 'September 25, 2026';
+export const LAST_UPDATED = 'September 29, 2026';
 
 interface LegalPageProps {
   title: string;
@@ -34,7 +34,7 @@ const LegalPage = ({ title, children }: LegalPageProps) => (
   </div>
 );
 
-/** Section heading + body used by both legal pages */
+/** A titled section of a legal page. */
 export const LegalSection = ({ heading, children }: { heading: string; children: React.ReactNode }) => (
   <section className="space-y-2">
     <h2 className="text-xl font-semibold text-gray-900 dark:text-white">{heading}</h2>

@@ -61,7 +61,6 @@ const LoadingCard = ({ className = "" }: LoadingCardProps) => {
 
 interface LoadingButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean;
-  variant?: string;
   children: React.ReactNode;
 }
 
@@ -84,10 +83,8 @@ const LoadingButton = ({ children, loading, disabled, className = "", ...props }
   );
 };
 
-// Named exports
 export { LoadingSpinner, LoadingPage, LoadingCard, LoadingButton };
 
-// Default export - full Loading object with all components
 const Loading = {
   Spinner: LoadingSpinner,
   Page: LoadingPage,

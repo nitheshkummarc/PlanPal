@@ -1,9 +1,6 @@
 /**
- * validators.test.ts - Frontend form rules must match the backend.
- *
- * Why this matters: if the frontend accepts something the API rejects (or the
- * reverse), users see confusing errors. These cases mirror
- * backend/tests/test_end_to_end_fixes.py.
+ * validators.test.ts - The form rules shared with the backend (backend/app/utils/validators.py)
+ * give the same answers for the same input.
  */
 import { describe, expect, it } from 'vitest';
 import {

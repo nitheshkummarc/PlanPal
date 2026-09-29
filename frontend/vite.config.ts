@@ -1,13 +1,12 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  const apiBaseUrl = process.env.VITE_API_BASE_URL
+  // Same sources Vite uses for import.meta.env: .env files and the process environment
+  const env = loadEnv(mode, process.cwd(), 'VITE_')
 
-  // A production build without VITE_API_BASE_URL would call http://localhost:5000
-  // from users' browsers. Warn loudly so it is caught in the Vercel build log.
-  if (mode === 'production' && !apiBaseUrl) {
+  if (mode === 'production' && !env.VITE_API_BASE_URL) {
     console.warn('\n[planpal] VITE_API_BASE_URL is not set: the build will call http://localhost:5000.\n' +
       '          Set it to the backend URL (https://...) in the hosting environment.\n')
   }
@@ -15,12 +14,9 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     server: {
-      // 5173 matches the backend's default ALLOWED_ORIGINS and the README
+      // Matches the backend's default ALLOWED_ORIGINS
       port: 5173,
       open: true
-    },
-    define: {
-      'import.meta.env.VITE_API_BASE_URL': JSON.stringify(apiBaseUrl || 'http://localhost:5000')
     }
   }
 })

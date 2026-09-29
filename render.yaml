@@ -5,9 +5,8 @@ services:
     region: singapore
     plan: free
     buildCommand: "pip install -r backend/requirements.txt"
-    # db.create_all() creates any missing tables (e.g. revoked_tokens); it never alters existing ones.
-    # For a database created before 2026-09-25, also run database/migrations/001_align_existing_schema.sql once.
-    startCommand: "cd backend && python -c \"from run import db, app; app.app_context().push(); db.create_all()\" && gunicorn run:app --bind 0.0.0.0:$PORT"
+    # The schema is managed in Supabase with database/init.sql and database/migrations/
+    startCommand: "cd backend && gunicorn run:app --bind 0.0.0.0:$PORT --threads 4"
     # Only route traffic to a new deploy once it can reach the database
     healthCheckPath: /api/system/ready
     envVars:
@@ -21,9 +20,9 @@ services:
         generateValue: true
       - key: JWT_SECRET_KEY
         generateValue: true
-      # Background jobs: expire past events, event reminders, revoked-token cleanup
+      # Background jobs: event reminders and revoked-token cleanup
       - key: ENABLE_TASK_SCHEDULER
         value: "true"
-      # Optional: Redis for rate-limit storage; empty = in-memory (fine for one instance)
+      # Optional: Redis for rate-limit counters; unset = in-memory (fine for one worker)
       - key: REDIS_URL
         sync: false

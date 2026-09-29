@@ -1,9 +1,6 @@
 /**
- * UserProfile.tsx - Public profile of another user (/users/:id)
- *
- * Why: Target of links from search results, the navbar search, and event
- * participant lists. Uses GET /api/users/<id>, which returns public fields
- * only (no email for other users).
+ * UserProfile.tsx - Another user's profile (/users/:id), opened from search results
+ * and participant lists. Other users' email addresses are never returned by the API.
  */
 
 import React, { useEffect } from 'react';
@@ -26,20 +23,13 @@ const UserProfile = () => {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
 
-  const {
-    data,
-    loading,
-    error,
-    execute: fetchUser
-  } = useApi(usersApi.getUserProfile);
+  const { data: profile, loading, error, execute: fetchUser } = useApi(usersApi.getUserProfile, { showErrorToast: false });
 
   useEffect(() => {
     if (userId) {
-      fetchUser(userId).catch(() => undefined); // error state is rendered below
+      fetchUser(userId).catch(() => undefined); // the error state is rendered below
     }
-  }, [userId]);
-
-  const profile = data?.user;
+  }, [userId, fetchUser]);
   const isOwnProfile = !!profile && currentUser?.user_id === profile.user_id;
 
   if (loading) {
@@ -69,8 +59,6 @@ const UserProfile = () => {
       </div>
     );
   }
-
-  const interests: string[] = profile.preferences || [];
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
@@ -116,13 +104,11 @@ const UserProfile = () => {
             )}
           </div>
 
-          {interests.length > 0 && (
+          {profile.interests.length > 0 && (
             <div className="mt-6">
               <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Interests</h2>
               <div className="flex flex-wrap gap-2">
-                {interests.map((interest) => (
-                  <TagChip key={interest} tag={{ name: interest } as any} />
-                ))}
+                {profile.interests.map((tag) => <TagChip key={tag.tag_id} tag={tag} />)}
               </div>
             </div>
           )}

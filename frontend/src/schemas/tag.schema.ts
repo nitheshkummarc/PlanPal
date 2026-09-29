@@ -1,8 +1,8 @@
 /**
- * tag.schema.ts - Zod schema for Tag domain model
+ * tag.schema.ts - Shape of a tag as returned by the API (backend Tag.to_dict()).
  *
- * Why: Runtime validation of Tag data from backend API responses.
- * Shape derived from backend Tag.to_dict() in models/__init__.py.
+ * The Zod schemas in this folder define the TypeScript types for API data
+ * (see types/index.ts). Responses are not parsed with them at runtime.
  */
 
 import { z } from 'zod';

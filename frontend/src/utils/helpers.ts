@@ -1,15 +1,10 @@
 /**
- * helpers.ts - General utility functions
- *
- * Why: Shared helpers for API errors, price formatting, and cross-page refresh
+ * helpers.ts - API error messages, price formatting and cross-page refresh signals.
  */
 
 import axios from 'axios';
 
-/**
- * Extract the user-facing message from an API error.
- * The backend always returns errors as { success: false, error: "..." }.
- */
+/** The user-facing message of an API error ({ success: false, error: "..." }). */
 export const getApiErrorMessage = (error: unknown, fallback: string): string => {
   if (axios.isAxiosError(error)) {
     const data = error.response?.data as { error?: string } | undefined;
@@ -19,56 +14,57 @@ export const getApiErrorMessage = (error: unknown, fallback: string): string => 
   return fallback;
 };
 
-// --- Cross-page refresh ---------------------------------------------------------
-// After an event is created/edited/joined/left/deleted, pages that show events
-// (Dashboard, Calendar) reload. Same tab: a window event. Other open tabs: the
-// browser's 'storage' event, fired when we write the localStorage key.
+/** HTTP status of an API error, if the server answered. */
+export const getApiErrorStatus = (error: unknown): number | undefined =>
+  axios.isAxiosError(error) ? error.response?.status : undefined;
 
-const EVENTS_CHANGED = 'eventUpdated';
+// --- Cross-page refresh ---------------------------------------------------------------
+// Pages that show events or notifications reload when data changes elsewhere: in the
+// same tab through a window event, in other tabs through the 'storage' event.
 
-/** Tell every open page (this tab and other tabs) that events changed. */
-export const notifyEventsChanged = (): void => {
-  window.dispatchEvent(new CustomEvent(EVENTS_CHANGED));
-  try {
-    localStorage.setItem(EVENTS_CHANGED, Date.now().toString());
-  } catch {
-    // Storage unavailable (e.g. private mode): other tabs just won't auto-refresh
-  }
-};
+const createSignal = (key: string) => ({
+  notify: (): void => {
+    window.dispatchEvent(new CustomEvent(key));
+    try {
+      localStorage.setItem(key, Date.now().toString());
+    } catch {
+      // Storage unavailable (e.g. private mode): other tabs will not refresh
+    }
+  },
+  subscribe: (callback: () => void): (() => void) => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === key) callback();
+    };
+    window.addEventListener(key, callback);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener(key, callback);
+      window.removeEventListener('storage', handleStorage);
+    };
+  },
+});
 
+const eventsSignal = createSignal('eventUpdated');
+const notificationsSignal = createSignal('notificationsUpdated');
+
+/** Tell every open page that events changed (created, edited, joined, left, deleted). */
+export const notifyEventsChanged = eventsSignal.notify;
 /** Run callback whenever events change. Returns an unsubscribe function for useEffect. */
-export const onEventsChanged = (callback: () => void): (() => void) => {
-  const handleStorage = (e: StorageEvent) => {
-    if (e.key === EVENTS_CHANGED) callback();
-  };
-  window.addEventListener(EVENTS_CHANGED, callback);
-  window.addEventListener('storage', handleStorage);
-  return () => {
-    window.removeEventListener(EVENTS_CHANGED, callback);
-    window.removeEventListener('storage', handleStorage);
-  };
-};
+export const onEventsChanged = eventsSignal.subscribe;
+/** Tell the notification bell and page that notifications changed. */
+export const notifyNotificationsChanged = notificationsSignal.notify;
+export const onNotificationsChanged = notificationsSignal.subscribe;
 
-// --- Price formatting -------------------------------------------------------------
+// --- Prices ---------------------------------------------------------------------------
 
-// Currency formatting for Indian Rupees
-export const formatCurrency = (amount: number | string | null | undefined): string => {
-  if (amount === null || amount === undefined) return '₹0';
-
-  const numericAmount = parseFloat(String(amount));
-  if (isNaN(numericAmount)) return '₹0';
-
-  // Format with Indian rupee symbol and proper thousand separators
-  return new Intl.NumberFormat('en-IN', {
+export const formatCurrency = (amount: number): string =>
+  new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
     minimumFractionDigits: 0,
-    maximumFractionDigits: 2
-  }).format(numericAmount);
-};
+    maximumFractionDigits: 2,
+  }).format(amount);
 
-// Format price for display (shorter version)
-export const formatPrice = (amount: number | null | undefined): string => {
-  if (amount === null || amount === undefined || amount === 0) return 'Free';
-  return formatCurrency(amount);
-};
+/** 'Free' for free events, otherwise the price in rupees. */
+export const formatPrice = (event: { is_paid: boolean; price: number | null }): string =>
+  event.is_paid && event.price !== null ? formatCurrency(event.price) : 'Free';

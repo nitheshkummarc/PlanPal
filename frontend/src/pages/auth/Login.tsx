@@ -127,9 +127,6 @@ const Login = () => {
             </div>
           </div>
 
-            {/* "Remember me" and "Forgot password" were removed: sessions are always kept
-                (tokens in localStorage) and there is no password-reset email flow. */}
-
             <div>
               <LoadingButton
                 type="submit"

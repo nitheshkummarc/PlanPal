@@ -1,68 +1,52 @@
 /**
- * axiosInstance.ts - Configured Axios HTTP Client
+ * axiosInstance.ts - HTTP client for the PlanPal API.
  *
- * Why: Pre-configured HTTP client with auto JWT attachment and token refresh
- *
- * Features:
- * - Automatic token attachment via request interceptor
- * - Automatic token refresh on 401 via response interceptor
- *   (concurrent 401s share ONE refresh request)
- * - Auto-logout on refresh failure
+ * - Attaches the access token to every request.
+ * - On a 401, refreshes the access token once (concurrent 401s share one refresh
+ *   request) and retries the original request.
+ * - If the refresh fails, clears the session and sends the user to /login.
  */
 
 import axios, { type InternalAxiosRequestConfig } from 'axios';
+import { API_BASE_URL } from '../config';
+import { tokenService } from './tokenService';
 
-const CONFIGURED_API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-
-// Force HTTPS: on an https page, never call a non-local API over plain http
-// (browsers block that as mixed content, and it would expose tokens).
-const isLocal = (url: string) => /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?/.test(url);
-const API_BASE_URL =
-  typeof window !== 'undefined' && window.location.protocol === 'https:' && !isLocal(CONFIGURED_API_URL)
-    ? CONFIGURED_API_URL.replace(/^http:\/\//, 'https://')
-    : CONFIGURED_API_URL;
-
-// Extend AxiosRequestConfig to include our custom _retry flag
 interface RetryableRequestConfig extends InternalAxiosRequestConfig {
   _retry?: boolean;
 }
 
-// Create axios instance
+// Requests where a 401 means "wrong credentials", not "expired access token"
+const NO_REFRESH_PATHS = ['/api/auth/login', '/api/auth/register', '/api/auth/refresh'];
+
+// Generous timeout: the hosted backend can take ~30 s to wake from idle
+const REQUEST_TIMEOUT_MS = 30000;
+
 const axiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  timeout: REQUEST_TIMEOUT_MS,
+  headers: { 'Content-Type': 'application/json' },
 });
 
-// Request interceptor to add auth token
-axiosInstance.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    const token = localStorage.getItem('accessToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error: unknown) => {
-    return Promise.reject(error);
+axiosInstance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  const token = tokenService.getAccessToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
-);
+  return config;
+});
 
-// The refresh request currently in flight, shared by every request that got a 401
 let refreshPromise: Promise<string> | null = null;
 
 const refreshAccessToken = (refreshToken: string): Promise<string> => {
   if (!refreshPromise) {
     refreshPromise = axios
-      .post(`${API_BASE_URL}/api/auth/refresh`, {}, {
-        headers: { Authorization: `Bearer ${refreshToken}` }
+      .post<{ access_token: string }>(`${API_BASE_URL}/api/auth/refresh`, {}, {
+        headers: { Authorization: `Bearer ${refreshToken}` },
+        timeout: REQUEST_TIMEOUT_MS,
       })
       .then((response) => {
-        const { access_token } = response.data as { access_token: string };
-        localStorage.setItem('accessToken', access_token);
-        return access_token;
+        tokenService.setTokens(response.data.access_token);
+        return response.data.access_token;
       })
       .finally(() => {
         refreshPromise = null;
@@ -71,38 +55,37 @@ const refreshAccessToken = (refreshToken: string): Promise<string> => {
   return refreshPromise;
 };
 
-// Response interceptor to handle token refresh
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error: unknown) => {
     if (!axios.isAxiosError(error) || !error.config) {
-      return Promise.reject(error);
+      throw error;
+    }
+    const request = error.config as RetryableRequestConfig;
+    const isAuthRequest = NO_REFRESH_PATHS.some((path) => request.url?.startsWith(path));
+
+    if (error.response?.status !== 401 || request._retry || isAuthRequest) {
+      throw error;
     }
 
-    const originalRequest = error.config as RetryableRequestConfig;
+    const refreshToken = tokenService.getRefreshToken();
+    if (!refreshToken) {
+      throw error;
+    }
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-
-      try {
-        const refreshToken = localStorage.getItem('refreshToken');
-        if (refreshToken) {
-          const accessToken = await refreshAccessToken(refreshToken);
-
-          // Retry the original request with new token
-          originalRequest.headers.Authorization = `Bearer ${accessToken}`;
-          return axiosInstance(originalRequest);
-        }
-      } catch {
-        // Refresh failed (expired or revoked): clear tokens and go to login
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
+    request._retry = true;
+    try {
+      const accessToken = await refreshAccessToken(refreshToken);
+      request.headers.Authorization = `Bearer ${accessToken}`;
+      return axiosInstance(request);
+    } catch (refreshError) {
+      // Only a rejected refresh token ends the session; a network failure keeps it
+      if (axios.isAxiosError(refreshError) && refreshError.response?.status === 401) {
+        tokenService.clearTokens();
         window.location.href = '/login';
-        return Promise.reject(error);
       }
+      throw error;
     }
-
-    return Promise.reject(error);
   }
 );
 

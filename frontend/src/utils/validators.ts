@@ -1,11 +1,22 @@
 /**
- * validators.ts - Form validation utilities
+ * validators.ts - Form validation.
  *
- * Why: Centralized validation logic for form inputs.
- * The user rules (email, password, username, name, URL) mirror
- * backend/app/utils/validators.py so a form that passes here is accepted by the
- * API. Keep both files in sync.
+ * The user rules (email, password, username, name, URL) and the field length limits
+ * mirror backend/app/utils/validators.py, so a form that passes here is accepted by
+ * the API. Keep both files in sync. The event form adds a few UI-only minimum lengths.
  */
+
+export const LIMITS = {
+  email: 254,
+  name: 100,
+  bio: 500,
+  url: 500,
+  tagName: 50,
+  eventTitle: 200,
+  eventDescription: 10000,
+  place: 200,     // place and location
+  city: 100,      // city and state
+} as const;
 
 export const EMAIL_MESSAGE = 'Please enter a valid email address';
 export const PASSWORD_MESSAGE =
@@ -16,7 +27,7 @@ export const NAME_MESSAGE = 'Name may only contain letters, spaces, hyphens, apo
 const WEAK_PASSWORD_PATTERNS = ['password', '12345', 'qwerty', 'admin'];
 
 export const validateEmail = (email: string): boolean => {
-  if (!email || email.length > 254 || email.includes('..')) return false;
+  if (!email || email.length > LIMITS.email || email.includes('..')) return false;
   return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email);
 };
 
@@ -29,46 +40,33 @@ export const validatePassword = (password: string): boolean => {
   return !WEAK_PASSWORD_PATTERNS.some(pattern => lower.includes(pattern));
 };
 
-export const validateUsername = (username: string): boolean => {
-  // 3-20 characters, alphanumeric and underscores only
-  return /^[a-zA-Z0-9_]{3,20}$/.test(username);
-};
+export const validateUsername = (username: string): boolean => /^[a-zA-Z0-9_]{3,20}$/.test(username);
 
 export const validateName = (name: string): boolean => {
-  // Letters from any language (incl. combining marks, e.g. Tamil), spaces, - ' and .
-  if (!name || !name.trim() || name.length > 100) return false;
+  // Letters from any script (including combining marks), spaces, - ' and .
+  if (!name || !name.trim() || name.length > LIMITS.name) return false;
   return /^[\p{L}\p{M} .'-]+$/u.test(name);
 };
 
-export const validateHttpUrl = (url: string): boolean => {
-  // Empty is allowed (field is optional); otherwise an http(s) URL
-  return !url || (url.length <= 500 && /^https?:\/\/\S+$/.test(url));
-};
+export const validateHttpUrl = (url: string): boolean =>
+  !url || (url.length <= LIMITS.url && /^https?:\/\/\S+$/.test(url));
 
-export const validateRequired = (value: string | null | undefined): boolean => {
-  return value !== null && value !== undefined && value.toString().trim() !== '';
-};
+export const validateHexColor = (color: string): boolean => !color || /^#[0-9a-fA-F]{6}$/.test(color);
 
-export const validateMinLength = (value: string | null | undefined, minLength: number): boolean => {
-  return !!value && value.toString().length >= minLength;
-};
+export const validateRequired = (value: string | null | undefined): boolean =>
+  value !== null && value !== undefined && value.toString().trim() !== '';
 
-export const validateMaxLength = (value: string | null | undefined, maxLength: number): boolean => {
-  return !value || value.toString().length <= maxLength;
-};
+export const validateMinLength = (value: string | null | undefined, minLength: number): boolean =>
+  !!value && value.toString().trim().length >= minLength;
 
-export const validateDate = (date: string): boolean => {
-  const dateObject = new Date(date);
-  return dateObject instanceof Date && !isNaN(dateObject.getTime());
-};
+export const validateMaxLength = (value: string | null | undefined, maxLength: number): boolean =>
+  !value || value.toString().length <= maxLength;
 
 export const validateFutureDate = (date: string): boolean => {
-  const dateObject = new Date(date);
-  const now = new Date();
-  return validateDate(date) && dateObject > now;
+  const value = new Date(date);
+  return !isNaN(value.getTime()) && value > new Date();
 };
 
-// Validator entry for schema-based form validation
 interface ValidatorEntry {
   validator: (value: string) => boolean;
   message: string;
@@ -76,79 +74,62 @@ interface ValidatorEntry {
 
 type ValidationSchema = Record<string, ValidatorEntry[]>;
 
+const required = (message: string): ValidatorEntry => ({ validator: validateRequired, message });
+const minLength = (length: number, label: string): ValidatorEntry => ({
+  validator: (value) => validateMinLength(value, length),
+  message: `${label} must be at least ${length} characters`,
+});
+const maxLength = (length: number, label: string): ValidatorEntry => ({
+  validator: (value) => validateMaxLength(value, length),
+  message: `${label} must be ${length} characters or fewer`,
+});
+
 export const eventSchema: ValidationSchema = {
-  title: [
-    { validator: validateRequired, message: 'Event title is required' },
-    { validator: (value: string) => validateMinLength(value, 3), message: 'Title must be at least 3 characters' },
-    { validator: (value: string) => validateMaxLength(value, 200), message: 'Title must be 200 characters or fewer' }
-  ],
+  title: [required('Event title is required'), minLength(3, 'Title'), maxLength(LIMITS.eventTitle, 'Title')],
   description: [
-    { validator: validateRequired, message: 'Event description is required' },
-    { validator: (value: string) => validateMinLength(value, 10), message: 'Description must be at least 10 characters' }
+    required('Event description is required'),
+    minLength(10, 'Description'),
+    maxLength(LIMITS.eventDescription, 'Description'),
   ],
   date_time: [
-    { validator: validateRequired, message: 'Event date and time is required' },
-    { validator: validateFutureDate, message: 'Event must be scheduled for a future date' }
+    required('Event date and time is required'),
+    { validator: validateFutureDate, message: 'Event must be scheduled for a future date' },
   ],
-  location: [
-    { validator: validateRequired, message: 'Event location is required' },
-    { validator: (value: string) => validateMinLength(value, 3), message: 'Location must be at least 3 characters' }
-  ],
-  place: [
-    { validator: validateRequired, message: 'Venue/Place is required' },
-    { validator: (value: string) => validateMinLength(value, 2), message: 'Place must be at least 2 characters' }
-  ],
-  city: [
-    { validator: validateRequired, message: 'City is required' },
-    { validator: (value: string) => validateMinLength(value, 2), message: 'City must be at least 2 characters' }
-  ],
-  state: [
-    { validator: validateRequired, message: 'State is required' },
-    { validator: (value: string) => validateMinLength(value, 2), message: 'State must be at least 2 characters' }
-  ]
+  location: [required('Event location is required'), minLength(3, 'Location'), maxLength(LIMITS.place, 'Location')],
+  place: [required('Venue/Place is required'), minLength(2, 'Place'), maxLength(LIMITS.place, 'Place')],
+  city: [required('City is required'), minLength(2, 'City'), maxLength(LIMITS.city, 'City')],
+  state: [required('State is required'), minLength(2, 'State'), maxLength(LIMITS.city, 'State')],
 };
 
 export const profileSchema: ValidationSchema = {
-  name: [
-    { validator: validateRequired, message: 'Name is required' },
-    { validator: validateName, message: NAME_MESSAGE }
-  ],
-  username: [
-    { validator: validateRequired, message: 'Username is required' },
-    { validator: validateUsername, message: USERNAME_MESSAGE }
-  ],
-  bio: [
-    { validator: (value: string) => validateMaxLength(value, 500), message: 'Bio must be 500 characters or fewer' }
-  ],
-  profile_image_url: [
-    { validator: validateHttpUrl, message: 'Profile image URL must start with http:// or https://' }
-  ]
+  name: [required('Name is required'), { validator: validateName, message: NAME_MESSAGE }],
+  username: [required('Username is required'), { validator: validateUsername, message: USERNAME_MESSAGE }],
+  bio: [maxLength(LIMITS.bio, 'Bio')],
+  profile_image_url: [{ validator: validateHttpUrl, message: 'Profile image URL must start with http:// or https://' }],
 };
 
-// Validation result types
 interface FormValidationResult {
   isValid: boolean;
   errors: Record<string, string>;
 }
 
-// Validation runner function
-export const validateForm = (data: Record<string, any>, schema: ValidationSchema): FormValidationResult => {
+/** Run a schema against form data; reports the first failing rule per field. */
+export const validateForm = (data: Record<string, unknown>, schema: ValidationSchema): FormValidationResult => {
   const errors: Record<string, string> = {};
-
-  for (const field in schema) {
-    const value = data[field];
-    const validators = schema[field];
-
-    for (const { validator, message } of validators) {
-      if (!validator(value)) {
-        errors[field] = message;
-        break; // Stop at first validation error for this field
-      }
-    }
+  for (const field of Object.keys(schema)) {
+    const raw = data[field];
+    const value = typeof raw === 'string' ? raw : '';
+    const failed = schema[field].find(({ validator }) => !validator(value));
+    if (failed) errors[field] = failed.message;
   }
-
-  return {
-    isValid: Object.keys(errors).length === 0,
-    errors
-  };
+  return { isValid: Object.keys(errors).length === 0, errors };
 };
+
+/** Price field for paid events: a number greater than 0 (NUMERIC(10, 2) on the server). */
+export const validatePrice = (value: string): boolean => {
+  const price = Number(value);
+  return value.trim() !== '' && Number.isFinite(price) && price > 0 && price < 100000000;
+};
+
+/** Optional capacity field: empty, or a whole number greater than 0. */
+export const validateCapacity = (value: string): boolean => value === '' || /^[1-9]\d*$/.test(value);

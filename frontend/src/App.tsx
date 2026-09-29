@@ -1,63 +1,32 @@
 /**
- * App.tsx - Main Application Component
+ * App.tsx - Providers and routes.
  *
- * Why: Root component that sets up routing, authentication, theme, and layout
+ * Public: /, /login, /register, /privacy, /terms, /404 (and any unknown URL).
+ * Signed in: /dashboard, /events, /events/:id, /events/:id/edit, /create-event,
+ * /calendar, /profile, /notifications, /search, /upcoming-events, /users/:id.
+ * Admin only: /admin/tags.
  *
- * Routes Structure:
- * Public Routes:
- * - /                  - Home landing page
- * - /login             - User login page
- * - /register          - User registration page
- * - /privacy           - Privacy Policy
- * - /terms             - Terms and Conditions
- * - /404 and any unknown URL - Custom "Page not found" page
- *
- * Protected Routes (require authentication):
- * - /dashboard         - User dashboard with overview
- * - /events            - Browse upcoming events
- * - /events/:id        - Event details page
- * - /events/:id/edit   - Edit event (creator only)
- * - /create-event      - Create new event form
- * - /calendar          - Calendar view of events
- * - /profile           - User profile management
- * - /notifications     - User notifications center
- * - /search            - Global search page
- * - /upcoming-events   - Upcoming events list
- * - /users/:id         - Another user's public profile
- *
- * Performance: the pages people land on first (Home, Login, Register,
- * Dashboard) are in the main bundle so they render without an extra request;
- * every other page is lazy-loaded (React.lazy) and fetched when first visited.
- * Measured with Lighthouse (mobile): this keeps first paint as fast as a single
- * bundle while cutting the JavaScript downloaded on first visit.
- *
- * Context Providers:
- * - ThemeProvider: Manages dark/light theme state
- * - AuthProvider: Manages authentication and user state
- * - Router: React Router for navigation
+ * Home, Login, Register and Dashboard are in the main bundle because most visits
+ * start there; every other page is loaded on demand with React.lazy.
  */
 
 import React, { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
-// Context Providers
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 
-// Layout Components (small and used on every page, so loaded up front)
 import Layout from './components/layout/Layout';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import PublicRoute from './components/common/PublicRoute';
 import { LoadingPage } from './components/ui/Loading';
 
-// Entry pages: loaded up front (see "Performance" above)
 import Home from './pages/Home';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import Dashboard from './pages/Dashboard';
 
-// Other pages: each becomes its own JS chunk, fetched on first visit
 const Events = lazy(() => import('./pages/Events'));
 const EventDetails = lazy(() => import('./pages/EventDetails'));
 const CreateEvent = lazy(() => import('./pages/CreateEvent'));
@@ -68,11 +37,11 @@ const Notifications = lazy(() => import('./pages/Notifications'));
 const Search = lazy(() => import('./pages/Search'));
 const UpcomingEvents = lazy(() => import('./pages/UpcomingEvents'));
 const UserProfile = lazy(() => import('./pages/UserProfile'));
+const AdminTags = lazy(() => import('./pages/AdminTags'));
 const PrivacyPolicy = lazy(() => import('./pages/legal/PrivacyPolicy'));
 const TermsOfService = lazy(() => import('./pages/legal/TermsOfService'));
 const NotFound = lazy(() => import('./pages/NotFound'));
 
-// Styles
 import './styles/index.css';
 
 /** Wraps a page that requires login in the guard and the standard layout. */
@@ -90,14 +59,12 @@ function App() {
           <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
             <Suspense fallback={<LoadingPage />}>
               <Routes>
-                {/* Public Routes */}
                 <Route path="/" element={<Layout><Home /></Layout>} />
                 <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
                 <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
                 <Route path="/privacy" element={<Layout><PrivacyPolicy /></Layout>} />
                 <Route path="/terms" element={<Layout><TermsOfService /></Layout>} />
 
-                {/* Protected Routes */}
                 <Route path="/dashboard" element={protectedPage(<Dashboard />)} />
                 <Route path="/events" element={protectedPage(<Events />)} />
                 <Route path="/events/:id" element={protectedPage(<EventDetails />)} />
@@ -109,14 +76,16 @@ function App() {
                 <Route path="/search" element={protectedPage(<Search />)} />
                 <Route path="/upcoming-events" element={protectedPage(<UpcomingEvents />)} />
                 <Route path="/users/:id" element={protectedPage(<UserProfile />)} />
+                <Route
+                  path="/admin/tags"
+                  element={<ProtectedRoute adminOnly><Layout><AdminTags /></Layout></ProtectedRoute>}
+                />
 
-                {/* 404: explicit /404 (used by placeholder links) and any unknown URL */}
                 <Route path="/404" element={<Layout><NotFound /></Layout>} />
                 <Route path="*" element={<Layout><NotFound /></Layout>} />
               </Routes>
             </Suspense>
 
-            {/* Toast notifications */}
             <Toaster
               position="top-right"
               toastOptions={{

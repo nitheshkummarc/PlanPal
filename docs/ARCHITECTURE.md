@@ -1,52 +1,112 @@
-# PlanPal System Architecture
+# Architecture
 
-This document outlines the high-level architecture, design decisions, and data flow of the PlanPal application. The system is designed to be highly scalable, secure, and developer-friendly.
+![PlanPal system architecture](../assets/architecture.png?v=2)
 
-## 1. High-Level Architecture
+PlanPal has three parts:
 
-PlanPal follows a containerized, decoupled architecture separating the client-side rendering from the server-side business logic and data persistence.
+| Part | Hosting | Code |
+| --- | --- | --- |
+| React single-page app | Vercel | `frontend/` |
+| Flask REST API | Render (gunicorn) | `backend/` |
+| PostgreSQL | Supabase | `database/init.sql` |
 
-![PlanPal System Architecture](../assets/architecture.png?v=2)
+The browser talks to the API directly over HTTPS (`VITE_API_BASE_URL`), so the API allows
+the frontend origin through an explicit CORS list. The API is the only client of the
+database: it connects with the Supabase connection string, and Row Level Security blocks the
+Supabase Data API from every table.
 
-## 2. Component Deep Dive
+---
 
-### 2.1 Frontend (React + Vite)
-- **Framework:** React 18 for component-based UI building.
-- **Bundler:** Vite provides sub-second HMR (Hot Module Replacement) and highly optimized production builds.
-- **Routing:** Client-side routing managed by `react-router-dom` ensuring a SPA (Single Page Application) experience without page reloads.
-- **State Management:** Context API combined with local component state.
-- **Styling:** Tailwind CSS for utility-first styling and robust dark mode support.
+## Backend
 
-### 2.2 Backend (Flask)
-- **Framework:** Python Flask provides a lightweight, unopinionated WSGI framework.
-- **Authentication:** `flask-jwt-extended` handles JWT (JSON Web Token) generation and validation. Tokens are stored securely and verified on protected routes.
-- **Security:** Passwords are never stored in plaintext. They are hashed using `bcrypt` (via Flask-Bcrypt) with a work factor designed to deter brute-force attacks.
-- **Logout:** Revokes the access and refresh tokens (their JWT ids are stored in a `revoked_tokens` denylist checked on every request).
-- **Task Scheduling:** A background daemon thread (enabled with `ENABLE_TASK_SCHEDULER`) runs every 5 minutes: it marks past events as expired, creates one reminder per participant for events starting within 24 hours, and deletes expired revoked tokens. Reminders are idempotent (never duplicated or skipped across restarts) and, on PostgreSQL, each job takes an advisory lock so only one worker runs it.
-- **Transactions:** Each request commits once. Joining an event locks the event row, then saves the participation, the cached participant count and the notifications together.
+`app/__init__.py` builds the app: configuration, extensions, JWT callbacks, error handlers,
+the HTTPS redirect, security headers and the blueprints.
 
-### 2.3 Database Layer (Supabase / PostgreSQL)
-- **Hosting:** Fully managed PostgreSQL hosted on Supabase.
-- **ORM:** SQLAlchemy maps Python objects to database tables, preventing SQL injection and simplifying complex relational queries.
-- **Connection Pooling:** We leverage SQLAlchemy's `QueuePool` in conjunction with Supabase's Transaction Pooler to manage database connections efficiently.
+| Module | Responsibility |
+| --- | --- |
+| `routes/auth.py` | Registration, login, logout, token refresh, profile, password change |
+| `routes/events.py` | Event CRUD, join, leave, participation status, the caller's lists |
+| `routes/search.py` | Search across events and people |
+| `routes/notifications.py` | The caller's notifications |
+| `routes/tags.py` | Tag list and admin changes |
+| `routes/users.py` | A user's profile |
+| `routes/system.py` | Health and readiness probes |
+| `services/event_queries.py` | Filters and sorting shared by the event list and search |
+| `services/notification_service.py` | Creates notifications inside the caller's transaction |
+| `services/task_scheduler.py` | Background reminders and revoked-token cleanup |
+| `utils/validators.py` | Input rules (mirrored in `frontend/src/utils/validators.ts`) |
+| `utils/query_params.py` | Pagination, UUID lists, date ranges, enumerated values |
+| `models/__init__.py` | SQLAlchemy models, mirroring `database/init.sql` |
 
-### 2.4 Infrastructure & Routing
-In the local development environment, Nginx sits at the edge of our Docker network. It serves two critical functions locally:
-1. **Static File Serving:** Delivers the built React assets (`index.html`, CSS, JS) at lightning speed.
-2. **Reverse Proxy:** Intercepts any request starting with `/api/` and routes it to the Flask backend container, effectively eliminating CORS issues.
-*(Note: In production, the frontend is hosted on Vercel and the backend runs on Render. The browser calls the Render API directly (`VITE_API_BASE_URL`), which is why the backend uses an explicit CORS allow-list. Both are served over HTTPS only: the API redirects HTTP to HTTPS and both send HSTS.)*
+Route handlers validate input, apply the business rules and commit once. Invalid input raises
+`ValidationError` (400); any unexpected exception reaches one handler that rolls back, logs the
+traceback and returns a generic 500.
 
-## 3. Data Flow Example: User Registration
+### Authentication
 
-1. The user fills out the registration form on the React frontend.
-2. React sends a `POST` request to `/api/auth/register` with a JSON payload.
-3. In local development, Nginx receives the request on port 80 and proxies it to the Backend container (in production, Vercel routes this to Render).
-4. Flask validates the payload, hashes the password using `bcrypt`, and attempts to create a new User model.
-5. SQLAlchemy requests a connection from its `QueuePool`.
-6. The connection pooler (Supavisor) authenticates the TCP connection to the PostgreSQL instance.
-7. The record is inserted. If the email is unique, a 201 Created response is sent back, containing a fresh JWT.
-8. The frontend stores the JWT and redirects the user to the dashboard.
+- Login and registration return a 30-minute access token and a 7-day refresh token. Both carry
+  the user's `token_version`.
+- On every authenticated request, one query checks that the user exists and is active, that
+  the token's id is not in `revoked_tokens` (logout), and that its `token_version` is current.
+  Changing the password increments `token_version`, which ends all other sessions.
+- Authorization is checked in the handlers from the database: organiser for editing an event,
+  organiser or admin for deleting it, admin role for tag changes, and ownership for
+  notifications.
 
-## 4. Scalability Considerations
-- **Stateless Authentication:** Because authentication relies on JWTs rather than server-side memory sessions, the HTTP request layer is highly scalable. Rate limiting uses Redis when `REDIS_URL` is set (shared across workers) and in-memory storage otherwise. The scheduler is safe to run in several workers (advisory locks + idempotent reminders); at larger scale it would move to a dedicated worker or cron job.
-- **Database Connection Limits:** Supabase handles connection pooling at the edge, meaning backend connection scaling will not easily exhaust PostgreSQL's internal connection limits.
+### Transactions and concurrency
+
+- Joining, leaving and changing capacity lock the event row (`SELECT ... FOR UPDATE`) before
+  reading or recounting `current_participants`, so concurrent requests are serialised.
+- Notifications are added to the same session and committed with the change that caused them.
+- Unique constraints are the final guard against duplicates (participations, events with the
+  same title and time, usernames and tag names ignoring case).
+
+### Background jobs
+
+When `ENABLE_TASK_SCHEDULER=true`, a daemon thread runs every five minutes:
+
+1. Reminders: one per participant for events starting within 24 hours. A reminder only counts
+   for the event's current time, so rescheduling produces a new one and repeated ticks never
+   duplicate it.
+2. Cleanup: revoked-token rows past their expiry are deleted.
+
+Each job takes a transaction-level advisory lock, so if several workers run the scheduler only
+one does the work per tick.
+
+---
+
+## Frontend
+
+| Area | Responsibility |
+| --- | --- |
+| `services/axiosInstance.ts` | Attaches the access token; on a 401 refreshes once (shared by concurrent requests) and retries; ends the session only when the refresh token is rejected |
+| `context/AuthContext.tsx` | Restores the session on load, login, register, logout, profile and password changes |
+| `components/common/ProtectedRoute.tsx` | Waits for the session check, then redirects signed-out users to `/login`, keeping the requested page |
+| `api/*.ts` | One typed client per API area |
+| `schemas/*.ts` | Zod schemas that define the TypeScript types of API data |
+| `components/events/EventForm.tsx` | The form shared by Create Event and Edit Event |
+| `utils/helpers.ts` | Error messages, prices, and signals that refresh other pages and tabs after a change |
+
+Times are sent and received in UTC. Everything shown to the user, including calendar days and
+date filters, uses the viewer's local time zone.
+
+---
+
+## Request flow: joining an event
+
+1. `EventDetails` calls `eventsApi.joinEvent(id)`; axios adds the access token.
+2. Flask verifies the token and runs the account and revocation check.
+3. `join_event` locks the event row, checks that the user has not joined, that the event is in
+   the future and that it is not full.
+4. It inserts the participation, recounts participants, and adds a notification for the
+   organiser and one for the participant.
+5. One commit saves all of it; any failure rolls all of it back.
+6. The page reloads the event and signals the Dashboard and Calendar (in this and other tabs)
+   to refresh.
+
+## Further reading
+
+- [DATABASE.md](DATABASE.md): ER diagram, constraints, indexes
+- [ROUTE_DOCUMENTATION.md](ROUTE_DOCUMENTATION.md): API reference
+- [EVENT_ROUTES_ORM_SQL_REFERENCE.md](EVENT_ROUTES_ORM_SQL_REFERENCE.md): SQL executed by the event routes
+- [DEPLOYMENT.md](DEPLOYMENT.md): Supabase, Render and Vercel setup

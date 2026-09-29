@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, fix/production-readiness]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -18,10 +18,10 @@ jobs:
           cache-dependency-path: |
             backend/requirements.txt
             backend/requirements-dev.txt
-      # requirements-dev.txt = runtime requirements + pytest
       - run: pip install -r requirements-dev.txt
         working-directory: backend
-      - run: python -m pytest tests/ -q --tb=short
+      # Tests use an in-memory SQLite database; no external services are needed
+      - run: python -m pytest tests -q --tb=short
         working-directory: backend
 
   frontend:
@@ -35,6 +35,9 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
         working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+      # Type-checks, then builds
       - run: npm run build
         working-directory: frontend
       - run: npm test

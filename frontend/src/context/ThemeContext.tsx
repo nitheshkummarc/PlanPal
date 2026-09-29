@@ -1,7 +1,6 @@
 /**
- * ThemeContext.tsx - Theme Management Context Provider
- *
- * Why: Manages dark/light theme toggle with localStorage persistence
+ * ThemeContext.tsx - Light/dark theme, saved in localStorage and defaulting to the
+ * operating system preference.
  */
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
@@ -16,12 +15,10 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const [isDark, setIsDark] = useState(() => {
-    // Check localStorage first
     const saved = localStorage.getItem('theme');
     if (saved) {
       return saved === 'dark';
     }
-    // Check system preference
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
 

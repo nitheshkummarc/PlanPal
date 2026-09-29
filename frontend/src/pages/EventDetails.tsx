@@ -1,179 +1,103 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   CalendarDaysIcon,
+  ChevronLeftIcon,
+  CurrencyRupeeIcon,
+  ExclamationTriangleIcon,
   MapPinIcon,
-  UsersIcon,
   ShareIcon,
   TrashIcon,
-  ChevronLeftIcon,
-  ExclamationTriangleIcon,
-  CurrencyRupeeIcon,
-  UserIcon
+  UserIcon,
+  UsersIcon,
 } from '@heroicons/react/24/outline';
-import { eventsApi, type EventParticipant } from '../api/eventsApi';
-import { LoadingSpinner, LoadingButton } from '../components/ui/Loading';
+import toast from 'react-hot-toast';
+import { eventsApi } from '../api/eventsApi';
+import { LoadingButton, LoadingSpinner } from '../components/ui/Loading';
 import TagChip from '../components/ui/TagChip';
-import { useApi } from '../hooks/useApi';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, formatTime } from '../utils/dateUtils';
-import toast from 'react-hot-toast';
-import { getApiErrorMessage, notifyEventsChanged } from '../utils/helpers';
+import { formatCurrency, getApiErrorMessage, getApiErrorStatus, notifyEventsChanged } from '../utils/helpers';
+import type { EventDetail, ParticipationStatus } from '../types';
 
-type ParticipationState = 'going' | 'interested' | 'not_joined';
+type PendingAction = 'join' | 'leave' | 'status' | 'delete' | null;
 
 const EventDetails = () => {
-  const { id: eventId } = useParams<{ id: string }>();
+  const { id: eventId = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [isJoining, setIsJoining] = useState(false);
-  const [isLeaving, setIsLeaving] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-  const [participationStatus, setParticipationStatus] = useState<ParticipationState>('not_joined');
+  const [event, setEvent] = useState<EventDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<{ status?: number; message: string } | null>(null);
+  const [pending, setPending] = useState<PendingAction>(null);
 
-  const {
-    data: eventRaw,
-    loading: eventLoading,
-    error: eventError,
-    execute: fetchEventRaw
-  } = useApi(eventsApi.getEventDetails);
-
-  const event = eventRaw && (eventRaw as any).event ? (eventRaw as any).event : eventRaw;
-
-  useEffect(() => {
-    if (eventId) {
-      fetchEventRaw(eventId);
+  const loadEvent = useCallback(async () => {
+    try {
+      setEvent(await eventsApi.getEventDetails(eventId));
+      setLoadError(null);
+    } catch (error) {
+      setLoadError({ status: getApiErrorStatus(error), message: getApiErrorMessage(error, 'Failed to load the event') });
+    } finally {
+      setLoading(false);
     }
   }, [eventId]);
 
-  // Re-check once the logged-in user is known (auth loads asynchronously)
   useEffect(() => {
-    if (eventId) {
-      loadParticipationStatus();
-    }
-  }, [eventId, user?.user_id]);
+    setLoading(true);
+    void loadEvent();
+  }, [loadEvent]);
 
-  const loadParticipationStatus = async () => {
-    if (!user || !eventId) {
-      setParticipationStatus('not_joined');
-      return;
-    }
-
+  /** Run an action, then reload this page and tell other pages (Dashboard, Calendar) to refresh. */
+  const runAction = async (
+    action: PendingAction, request: () => Promise<unknown>, success: string, failure: string
+  ): Promise<boolean> => {
+    setPending(action);
     try {
-      const result = await eventsApi.getParticipationStatus(eventId);
-      setParticipationStatus(result.status);
-    } catch (error) {
-      console.error('Failed to load participation status:', error);
-      setParticipationStatus('not_joined');
-    }
-  };
-
-  /** Reload this page's data and tell other pages (Dashboard, Calendar) to refresh. */
-  const refreshAfterChange = async () => {
-    await Promise.all([fetchEventRaw(eventId), loadParticipationStatus()]);
-    notifyEventsChanged();
-  };
-
-  const handleJoinEvent = async () => {
-    if (!user) {
-      toast.error('Please log in to join events');
-      navigate('/login');
-      return;
-    }
-
-    try {
-      setIsJoining(true);
-      await eventsApi.joinEvent(eventId!);
-      toast.success('Successfully joined the event!');
-      await refreshAfterChange();
-    } catch (error: unknown) {
-      console.error('Join event error:', error);
-      toast.error(getApiErrorMessage(error, 'Failed to join event'));
-    } finally {
-      setIsJoining(false);
-    }
-  };
-
-  const handleLeaveEvent = async () => {
-    if (!user) {
-      toast.error('Please log in to manage event participation');
-      navigate('/login');
-      return;
-    }
-
-    try {
-      setIsLeaving(true);
-      await eventsApi.leaveEvent(eventId!);
-      toast.success('Successfully left the event');
-      await refreshAfterChange();
-    } catch (error: unknown) {
-      console.error('Leave event error:', error);
-      toast.error(getApiErrorMessage(error, 'Failed to leave event'));
-    } finally {
-      setIsLeaving(false);
-    }
-  };
-
-  // Switch between 'interested' and 'going' (joining starts as 'interested')
-  const handleStatusChange = async (status: 'interested' | 'going') => {
-    if (status === participationStatus) return;
-    try {
-      setIsUpdatingStatus(true);
-      await eventsApi.updateEventStatus(eventId!, status);
-      toast.success(status === 'going' ? "You're going!" : 'Marked as interested');
-      await refreshAfterChange();
-    } catch (error: unknown) {
-      toast.error(getApiErrorMessage(error, 'Failed to update your status'));
-    } finally {
-      setIsUpdatingStatus(false);
-    }
-  };
-
-  const handleDeleteEvent = async () => {
-    if (!user) {
-      toast.error('Please log in to delete events');
-      navigate('/login');
-      return;
-    }
-
-    const confirmed = window.confirm('Delete this event? Participants will be notified and it cannot be undone.');
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      setIsDeleting(true);
-      await eventsApi.deleteEvent(eventId!);
-      toast.success('Event deleted successfully');
+      await request();
+      toast.success(success);
       notifyEventsChanged();
-      navigate('/events');
-    } catch (error: unknown) {
-      console.error('Delete event error:', error);
-      toast.error(getApiErrorMessage(error, 'Failed to delete event'));
+      if (action !== 'delete') await loadEvent();
+      return true;
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, failure));
+      return false;
     } finally {
-      setIsDeleting(false);
+      setPending(null);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm('Delete this event? Participants will be notified and it cannot be undone.')) return;
+    if (await runAction('delete', () => eventsApi.deleteEvent(eventId), 'Event deleted', 'Failed to delete event')) {
+      navigate('/events');
+    }
+  };
+
+  const handleStatusChange = (status: ParticipationStatus) => {
+    if (event && status !== event.viewer.status) {
+      void runAction(
+        'status',
+        () => eventsApi.updateParticipationStatus(eventId, status),
+        status === 'going' ? "You're going!" : 'Marked as interested',
+        'Failed to update your status'
+      );
     }
   };
 
   const handleShare = async () => {
     try {
       if (navigator.share) {
-        await navigator.share({
-          title: event.title,
-          text: event.description,
-          url: window.location.href,
-        });
+        await navigator.share({ title: event?.title, url: window.location.href });
       } else {
         await navigator.clipboard.writeText(window.location.href);
         toast.success('Event link copied to clipboard!');
       }
-    } catch (error) {
-      console.error('Failed to share:', error);
+    } catch {
+      // Share sheet dismissed
     }
   };
 
-  if (eventLoading) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <LoadingSpinner size="lg" />
@@ -181,21 +105,27 @@ const EventDetails = () => {
     );
   }
 
-  if (eventError || !event) {
+  if (!event) {
+    const notFound = loadError?.status === 404 || loadError?.status === 400;
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center py-12">
-            <ExclamationTriangleIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-              Event not found
-            </h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
-              The event you're looking for doesn't exist or has been removed.
-            </p>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center py-12">
+          <ExclamationTriangleIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+            {notFound ? 'Event not found' : 'Could not load this event'}
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
+            {notFound ? "The event you're looking for doesn't exist or has been removed." : loadError?.message}
+          </p>
+          <div className="flex gap-3 justify-center">
+            {!notFound && (
+              <button onClick={() => { setLoading(true); void loadEvent(); }} className="btn-primary">
+                Try again
+              </button>
+            )}
             <button
               onClick={() => navigate('/events')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 font-medium"
             >
               Browse Events
             </button>
@@ -205,16 +135,15 @@ const EventDetails = () => {
     );
   }
 
-  const participants: EventParticipant[] = event.participants || [];
-  const isOwner = user?.user_id === event.posted_by;
-  const isParticipant = participationStatus === 'going' || participationStatus === 'interested';
-  const isEventPast = new Date(event.timestamp) < new Date();
-  const canJoin = user && !isOwner && !isParticipant && !isEventPast;
-  const canLeave = user && isParticipant && !isOwner && !isEventPast;
-  const canChangeStatus = canLeave;
-  const canEdit = user && isOwner && !isEventPast;
-  const canDelete = user && (isOwner || user.role === 'admin');
-  const isEventFull = event.max_participants && typeof event.current_participants === 'number' && event.current_participants >= event.max_participants;
+  const { viewer, participants } = event;
+  const isOwner = viewer.is_creator;
+  const isParticipant = viewer.status !== 'not_joined';
+  const isPast = new Date(event.timestamp) <= new Date();
+  const isFull = event.max_participants !== null && event.current_participants >= event.max_participants;
+  const canJoin = !isParticipant && !isPast;
+  const canManageParticipation = isParticipant && !isOwner && !isPast;
+  const canEdit = isOwner && !isPast;
+  const canDelete = isOwner || user?.role === 'admin';
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
@@ -232,43 +161,27 @@ const EventDetails = () => {
             <div className="flex items-start justify-between mb-6">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
-                  <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                    {event.title}
-                  </h1>
-                  {isEventPast && (
+                  <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{event.title}</h1>
+                  {isPast && (
                     <span className="px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400">
                       Past event
                     </span>
                   )}
-
-                  {event.is_paid && (
-                    <span className="px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400 flex items-center gap-1">
-                      <CurrencyRupeeIcon className="h-4 w-4" />
-                      Paid Event
-                    </span>
-                  )}
                 </div>
-
-                {event.is_paid && event.price && (
-                  <div className="flex items-center gap-2 mb-4">
-                    <CurrencyRupeeIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
-                    <span className="text-lg font-semibold text-green-600 dark:text-green-400">
-                      ₹{parseFloat(event.price).toFixed(2)}
-                    </span>
-                    <span className="text-gray-500 dark:text-gray-400 text-sm">per person</span>
-                  </div>
-                )}
+                <div className="flex items-center gap-2 mb-4">
+                  <CurrencyRupeeIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
+                  <span className="text-lg font-semibold text-green-600 dark:text-green-400">
+                    {event.is_paid && event.price !== null ? `${formatCurrency(event.price)} per person` : 'Free'}
+                  </span>
+                </div>
               </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleShare}
-                  className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                  title="Share event"
-                >
-                  <ShareIcon className="h-5 w-5" />
-                </button>
-              </div>
+              <button
+                onClick={handleShare}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                title="Share event"
+              >
+                <ShareIcon className="h-5 w-5" />
+              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -278,26 +191,17 @@ const EventDetails = () => {
                   <div>
                     <p className="text-sm text-gray-500 dark:text-gray-400">Date &amp; time</p>
                     <p className="text-gray-900 dark:text-white font-medium">
-                      {event.timestamp ? `${formatDate(event.timestamp)} · ${formatTime(event.timestamp)}` : 'N/A'}
+                      {formatDate(event.timestamp)} · {formatTime(event.timestamp)}
                     </p>
                   </div>
                 </div>
-
                 <div className="flex items-start gap-3">
                   <MapPinIcon className="h-5 w-5 text-gray-400 mt-0.5 flex-shrink-0" />
                   <div>
                     <p className="text-sm text-gray-500 dark:text-gray-400">Location</p>
-                    <p className="text-gray-900 dark:text-white font-medium">
-                      {event.place || 'Venue'}
-                    </p>
-                    <p className="text-gray-600 dark:text-gray-400">
-                      {event.location}
-                    </p>
-                    {event.city && event.state && (
-                      <p className="text-gray-600 dark:text-gray-400">
-                        {event.city}, {event.state}
-                      </p>
-                    )}
+                    <p className="text-gray-900 dark:text-white font-medium">{event.place}</p>
+                    <p className="text-gray-600 dark:text-gray-400">{event.location}</p>
+                    <p className="text-gray-600 dark:text-gray-400">{event.city}, {event.state}</p>
                   </div>
                 </div>
               </div>
@@ -308,26 +212,18 @@ const EventDetails = () => {
                   <div>
                     <p className="text-sm text-gray-500 dark:text-gray-400">Participants</p>
                     <p className="text-gray-900 dark:text-white font-medium">
-                      {typeof event.current_participants === 'number' && event.current_participants >= 0
-                        ? event.current_participants
-                        : participants.length}
-                      {event.max_participants ? ` / ${event.max_participants}` : ''} people
+                      {event.current_participants}
+                      {event.max_participants !== null && ` / ${event.max_participants}`} people
                     </p>
-                    {isEventFull && (
-                      <p className="text-red-600 dark:text-red-400 text-sm">Event is full</p>
-                    )}
+                    {isFull && <p className="text-red-600 dark:text-red-400 text-sm">Event is full</p>}
                   </div>
                 </div>
-
                 {event.creator_name && (
                   <div className="flex items-start gap-3">
-                    <div className="h-5 w-5 bg-blue-600 rounded-full mt-0.5 flex-shrink-0"></div>
+                    <UserIcon className="h-5 w-5 text-gray-400 mt-0.5 flex-shrink-0" />
                     <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Organized by</p>
-                      <Link
-                        to={`/users/${event.posted_by}`}
-                        className="text-gray-900 dark:text-white font-medium hover:underline"
-                      >
+                      <p className="text-sm text-gray-500 dark:text-gray-400">Organised by</p>
+                      <Link to={`/users/${event.posted_by}`} className="text-gray-900 dark:text-white font-medium hover:underline">
                         {event.creator_name}
                       </Link>
                     </div>
@@ -336,26 +232,18 @@ const EventDetails = () => {
               </div>
             </div>
 
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-                About this event
-              </h3>
-              <div className="prose prose-gray dark:prose-invert max-w-none">
-                <p className="text-gray-600 dark:text-gray-400 whitespace-pre-line">
-                  {event.description}
-                </p>
-              </div>
-            </div>
-
-            {event.tags && event.tags.length > 0 && (
+            {event.description && (
               <div className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-                  Tags
-                </h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">About this event</h3>
+                <p className="text-gray-600 dark:text-gray-400 whitespace-pre-line">{event.description}</p>
+              </div>
+            )}
+
+            {event.tags.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Tags</h3>
                 <div className="flex flex-wrap gap-2">
-                  {event.tags.map((tag: any, index: number) => (
-                    <TagChip key={index} tag={tag} />
-                  ))}
+                  {event.tags.map((tag) => <TagChip key={tag.tag_id} tag={tag} />)}
                 </div>
               </div>
             )}
@@ -379,7 +267,7 @@ const EventDetails = () => {
                         )}
                         {participant.name}
                         <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {participant.user_id === event.posted_by ? 'organizer' : participant.status}
+                          {participant.user_id === event.posted_by ? 'organiser' : participant.status}
                         </span>
                       </Link>
                     </li>
@@ -388,46 +276,33 @@ const EventDetails = () => {
               </div>
             )}
 
-            <div className="flex items-center justify-between pt-6 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-gray-200 dark:border-gray-700">
               <div className="text-sm text-gray-500 dark:text-gray-400">
-                {!user ? (
-                  <span>
-                    <Link to="/login" className="text-blue-600 dark:text-blue-400 hover:underline">
-                      Log in
-                    </Link>
-                    {' '}to join events and participate
-                  </span>
-                ) : isOwner ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                    <span className="font-medium text-blue-600 dark:text-blue-400">You're organizing this event</span>
-                  </div>
+                {isOwner ? (
+                  <span className="font-medium text-blue-600 dark:text-blue-400">You're organising this event</span>
                 ) : isParticipant ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span className="font-medium text-green-600 dark:text-green-400">
-                      {participationStatus === 'going' ? "You're going to this event" : "You're interested in this event"}
-                    </span>
-                  </div>
-                ) : isEventPast ? (
+                  <span className="font-medium text-green-600 dark:text-green-400">
+                    {viewer.status === 'going' ? "You're going to this event" : "You're interested in this event"}
+                  </span>
+                ) : isPast ? (
                   <span>This event has already passed</span>
                 ) : (
                   <span>Join this event to participate</span>
                 )}
               </div>
 
-              <div className="flex items-center gap-3">
-                {canChangeStatus && (
+              <div className="flex flex-wrap items-center gap-3">
+                {canManageParticipation && (
                   <div className="inline-flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden" role="group" aria-label="Your participation">
                     {(['interested', 'going'] as const).map((status) => (
                       <button
                         key={status}
                         type="button"
                         onClick={() => handleStatusChange(status)}
-                        disabled={isUpdatingStatus}
-                        aria-pressed={participationStatus === status}
+                        disabled={pending !== null}
+                        aria-pressed={viewer.status === status}
                         className={`px-3 py-2 text-sm font-medium transition-colors ${
-                          participationStatus === status
+                          viewer.status === status
                             ? 'bg-blue-600 text-white'
                             : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
                         }`}
@@ -438,12 +313,11 @@ const EventDetails = () => {
                   </div>
                 )}
 
-                {canLeave && (
+                {canManageParticipation && (
                   <LoadingButton
-                    onClick={handleLeaveEvent}
-                    loading={isLeaving}
-                    variant="outline"
-                    className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/20"
+                    onClick={() => runAction('leave', () => eventsApi.leaveEvent(eventId), 'You left the event', 'Failed to leave event')}
+                    loading={pending === 'leave'}
+                    className="px-4 py-2 rounded-lg font-medium border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/20"
                   >
                     Leave Event
                   </LoadingButton>
@@ -451,16 +325,14 @@ const EventDetails = () => {
 
                 {canJoin && (
                   <LoadingButton
-                    onClick={handleJoinEvent}
-                    loading={isJoining}
+                    onClick={() => runAction('join', () => eventsApi.joinEvent(eventId), 'Successfully joined the event!', 'Failed to join event')}
+                    loading={pending === 'join'}
+                    disabled={isFull}
                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      isEventFull
-                        ? 'bg-gray-400 text-white cursor-not-allowed'
-                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                      isFull ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'
                     }`}
-                    disabled={isEventFull}
                   >
-                    {isEventFull ? 'Event Full' : 'Join Event'}
+                    {isFull ? 'Event Full' : 'Join Event'}
                   </LoadingButton>
                 )}
 
@@ -475,10 +347,9 @@ const EventDetails = () => {
 
                 {canDelete && (
                   <LoadingButton
-                    onClick={handleDeleteEvent}
-                    loading={isDeleting}
-                    variant="outline"
-                    className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/20"
+                    onClick={handleDelete}
+                    loading={pending === 'delete'}
+                    className="px-4 py-2 rounded-lg font-medium border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-600 dark:text-red-400 dark:hover:bg-red-900/20"
                   >
                     <span className="inline-flex items-center gap-2">
                       <TrashIcon className="h-4 w-4" />

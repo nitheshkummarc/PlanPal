@@ -23,12 +23,18 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      'react-refresh/only-export-components': [
-        'warn',
-        { allowConstantExport: true },
-      ],
+      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/no-floating-promises': 'error'
+      '@typescript-eslint/no-floating-promises': 'error',
+      // React event handlers may be async; their errors are handled inside the handler
+      '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
+    },
+  },
+  {
+    files: ['src/__tests__/**/*.{ts,tsx}'],
+    rules: {
+      // vi.mocked(object.method) references methods without calling them
+      '@typescript-eslint/unbound-method': 'off',
     },
   },
 );

@@ -1,357 +1,147 @@
 /**
- * AuthContext.tsx - Authentication Context Provider
+ * AuthContext.tsx - Signed-in user and account actions.
  *
- * Why: Manages global auth state (user, tokens, login/logout) across the app
- *
- * State:
- * - isAuthenticated: Boolean indicating if user is logged in
- * - user: Current user object with profile data
- * - loading: Loading state for async operations
- * - error: Error message for failed operations
- *
- * Methods:
- * - login(credentials): Authenticate user with email and password
- * - register(userData): Create new user account
- * - logout(): Sign out current user
- * - updateProfile(profileData): Update user profile information
- * - changePassword(passwordData): Change user password
- * - clearError(): Clear authentication errors
+ * On load the session is restored if either stored token is still valid (an expired
+ * access token is renewed by the axios interceptor). `loading` starts as true so
+ * route guards wait for that check instead of redirecting a signed-in user to /login.
+ * Tokens are only discarded when the server rejects them, never on network errors.
  */
 
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
-import { authApi } from '../api/authApi';
-import { tokenService } from '../services/tokenService';
+import React, { createContext, useCallback, useContext, useEffect, useReducer } from 'react';
 import toast from 'react-hot-toast';
-import axios from 'axios';
+import {
+  authApi, type ChangePasswordData, type LoginCredentials, type ProfileUpdateData, type RegisterData,
+} from '../api/authApi';
+import { tokenService } from '../services/tokenService';
+import { getApiErrorMessage, getApiErrorStatus } from '../utils/helpers';
 import type { AppUser } from '../types';
 import type { ContextResponse } from '../types/api';
-import type { ApiError } from '../types/api';
-import { BYPASS_AUTH } from '../config';
-
-// --- State types ---
 
 interface AuthState {
   isAuthenticated: boolean;
   user: AppUser | null;
   loading: boolean;
-  error: string | null;
 }
-
-// --- Action types (discriminated union) ---
 
 type AuthAction =
-  | { type: 'LOGIN_START' }
-  | { type: 'LOGIN_SUCCESS'; payload: { user: AppUser } }
-  | { type: 'LOGIN_FAILURE'; payload: string }
-  | { type: 'LOGOUT' }
-  | { type: 'UPDATE_USER'; payload: Partial<AppUser> }
-  | { type: 'SET_LOADING'; payload: boolean }
-  | { type: 'CLEAR_ERROR' };
-
-// --- Context value interface ---
-
-interface LoginCredentials {
-  email: string;
-  password: string;
-}
-
-interface RegisterData {
-  name: string;
-  email: string;
-  username: string;
-  password: string;
-  bio?: string;
-  profile_image_url?: string;
-  preferences?: string[];
-}
-
-interface ProfileUpdateData {
-  name?: string;
-  username?: string;
-  bio?: string;
-  profile_image_url?: string;
-  preferences?: string[];
-}
-
-interface ChangePasswordData {
-  current_password: string;
-  new_password: string;
-}
+  | { type: 'SESSION_STARTED'; user: AppUser }
+  | { type: 'SESSION_ENDED' }
+  | { type: 'USER_UPDATED'; user: AppUser };
 
 interface AuthContextValue extends AuthState {
   login: (credentials: LoginCredentials) => Promise<ContextResponse<void>>;
-  register: (userData: RegisterData) => Promise<ContextResponse<void>>;
+  register: (data: RegisterData) => Promise<ContextResponse<void>>;
   logout: () => Promise<void>;
-  updateProfile: (profileData: ProfileUpdateData) => Promise<ContextResponse<void>>;
-  changePassword: (passwordData: ChangePasswordData) => Promise<ContextResponse<void>>;
-  clearError: () => void;
+  updateProfile: (data: ProfileUpdateData) => Promise<ContextResponse<void>>;
+  changePassword: (data: ChangePasswordData) => Promise<ContextResponse<void>>;
 }
-
-// --- Constants ---
-// BYPASS_AUTH is imported from ../config (env-gated, defaults to false).
-
-const TEST_USER: AppUser = {
-  user_id: '00000000-0000-0000-0000-000000000001',
-  name: 'Test User',
-  email: 'test@example.com',
-  username: 'testuser',
-  role: 'admin',
-  bio: 'Frontend preview user',
-  profile_image_url: null,
-  preferences: ['Technology', 'Business'],
-  is_active: true,
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-};
-
-// --- Reducer ---
 
 const authReducer = (state: AuthState, action: AuthAction): AuthState => {
   switch (action.type) {
-    case 'LOGIN_START':
-      return { ...state, loading: true, error: null };
-    case 'LOGIN_SUCCESS':
-      return {
-        ...state,
-        loading: false,
-        isAuthenticated: true,
-        user: action.payload.user,
-        error: null,
-      };
-    case 'LOGIN_FAILURE':
-      return {
-        ...state,
-        loading: false,
-        isAuthenticated: false,
-        user: null,
-        error: action.payload,
-      };
-    case 'LOGOUT':
-      return {
-        ...state,
-        isAuthenticated: false,
-        user: null,
-        loading: false, // was true: nothing reset it, so /login spun forever after logout
-        error: null,
-      };
-    case 'UPDATE_USER':
-      return {
-        ...state,
-        user: state.user ? { ...state.user, ...action.payload } : null,
-      };
-    case 'SET_LOADING':
-      return { ...state, loading: action.payload };
-    case 'CLEAR_ERROR':
-      return { ...state, error: null };
+    case 'SESSION_STARTED':
+      return { isAuthenticated: true, user: action.user, loading: false };
+    case 'SESSION_ENDED':
+      return { isAuthenticated: false, user: null, loading: false };
+    case 'USER_UPDATED':
+      return { ...state, user: action.user };
     default:
       return state;
   }
 };
 
-const initialState: AuthState = {
-  isAuthenticated: false,
-  user: null,
-  loading: false,
-  error: null,
-};
-
-// --- Context ---
+const initialState: AuthState = { isAuthenticated: false, user: null, loading: true };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-
-// --- Provider ---
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
-  // Check authentication status on app load
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        dispatch({ type: 'SET_LOADING', payload: true });
-
-        if (BYPASS_AUTH) {
-          dispatch({
-            type: 'LOGIN_SUCCESS',
-            payload: { user: TEST_USER },
-          });
-          return;
-        }
-
-        if (tokenService.isAuthenticated()) {
-          const response = await authApi.getProfile();
-          const userData = response.user;
-
-          dispatch({
-            type: 'LOGIN_SUCCESS',
-            payload: { user: userData },
-          });
-        } else {
-          dispatch({ type: 'SET_LOADING', payload: false });
-        }
-      } catch (error) {
-        console.error('Auth check failed:', error);
+    const restoreSession = async () => {
+      if (!tokenService.hasSession()) {
         tokenService.clearTokens();
-        dispatch({ type: 'LOGIN_FAILURE', payload: 'Session expired' });
-        dispatch({ type: 'SET_LOADING', payload: false });
+        dispatch({ type: 'SESSION_ENDED' });
+        return;
+      }
+      try {
+        const { user } = await authApi.getProfile();
+        dispatch({ type: 'SESSION_STARTED', user });
+      } catch (error) {
+        if (getApiErrorStatus(error) === 401) {
+          tokenService.clearTokens();
+        } else {
+          toast.error(getApiErrorMessage(error, 'Could not restore your session'));
+        }
+        dispatch({ type: 'SESSION_ENDED' });
       }
     };
-
-    checkAuth();
+    void restoreSession();
   }, []);
 
-  const login = async (credentials: LoginCredentials): Promise<ContextResponse<void>> => {
-    try {
-      dispatch({ type: 'LOGIN_START' });
-
-      if (BYPASS_AUTH) {
-        dispatch({
-          type: 'LOGIN_SUCCESS',
-          payload: { user: TEST_USER },
-        });
-        toast.success('Login bypassed for UI preview!');
-        return { success: true, data: undefined };
+  const startSession = useCallback(
+    async (request: () => ReturnType<typeof authApi.login>, successMessage: string, fallback: string) => {
+      try {
+        const { access_token, refresh_token, user } = await request();
+        tokenService.setTokens(access_token, refresh_token);
+        dispatch({ type: 'SESSION_STARTED', user });
+        toast.success(successMessage);
+        return { success: true, data: undefined } as const;
+      } catch (error) {
+        const message = getApiErrorMessage(error, fallback);
+        toast.error(message);
+        return { success: false, error: message } as const;
       }
+    },
+    []
+  );
 
-      const response = await authApi.login(credentials);
+  const login = (credentials: LoginCredentials) =>
+    startSession(() => authApi.login(credentials), 'Login successful!', 'Login failed');
 
-      const { access_token, refresh_token, user } = response;
-      tokenService.setTokens(access_token, refresh_token);
-
-      dispatch({
-        type: 'LOGIN_SUCCESS',
-        payload: { user },
-      });
-
-      toast.success('Login successful!');
-      return { success: true, data: undefined };
-    } catch (error) {
-      let errorMessage = 'Login failed';
-      if (axios.isAxiosError(error)) {
-        errorMessage = (error.response?.data as ApiError | undefined)?.error ?? errorMessage;
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      dispatch({
-        type: 'LOGIN_FAILURE',
-        payload: errorMessage,
-      });
-      toast.error(errorMessage);
-      return { success: false, error: errorMessage };
-    }
-  };
-
-  const register = async (userData: RegisterData): Promise<ContextResponse<void>> => {
-    try {
-      dispatch({ type: 'LOGIN_START' });
-
-      if (BYPASS_AUTH) {
-        dispatch({
-          type: 'LOGIN_SUCCESS',
-          payload: { user: TEST_USER },
-        });
-        toast.success('Registration bypassed for UI preview!');
-        return { success: true, data: undefined };
-      }
-
-      const response = await authApi.register(userData);
-
-      const { access_token, refresh_token, user } = response;
-      tokenService.setTokens(access_token, refresh_token);
-
-      dispatch({
-        type: 'LOGIN_SUCCESS',
-        payload: { user },
-      });
-
-      toast.success('Registration successful!');
-      return { success: true, data: undefined };
-    } catch (error) {
-      let errorMessage = 'Registration failed';
-      if (axios.isAxiosError(error)) {
-        errorMessage = (error.response?.data as ApiError | undefined)?.error ?? errorMessage;
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      dispatch({
-        type: 'LOGIN_FAILURE',
-        payload: errorMessage,
-      });
-      toast.error(errorMessage);
-      return { success: false, error: errorMessage };
-    }
-  };
+  const register = (data: RegisterData) =>
+    startSession(() => authApi.register(data), 'Registration successful!', 'Registration failed');
 
   const logout = async (): Promise<void> => {
     try {
       await authApi.logout();
-    } catch (error) {
-      console.error('Logout API call failed:', error);
-    } finally {
-      tokenService.clearTokens();
-      dispatch({ type: 'LOGOUT' });
-      toast.success('Logged out successfully');
+    } catch {
+      // The tokens are discarded below either way; they expire on their own
     }
+    tokenService.clearTokens();
+    dispatch({ type: 'SESSION_ENDED' });
+    toast.success('Logged out successfully');
   };
 
-  const updateProfile = async (profileData: ProfileUpdateData): Promise<ContextResponse<void>> => {
+  const updateProfile = async (data: ProfileUpdateData): Promise<ContextResponse<void>> => {
     try {
-      const response = await authApi.updateProfile(profileData);
-      const updatedUser = response.user;
-      dispatch({
-        type: 'UPDATE_USER',
-        payload: updatedUser,
-      });
+      const { user } = await authApi.updateProfile(data);
+      dispatch({ type: 'USER_UPDATED', user });
       toast.success('Profile updated successfully!');
       return { success: true, data: undefined };
     } catch (error) {
-      let errorMessage = 'Profile update failed';
-      if (axios.isAxiosError(error)) {
-        errorMessage = (error.response?.data as ApiError | undefined)?.error ?? errorMessage;
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      toast.error(errorMessage);
-      return { success: false, error: errorMessage };
+      const message = getApiErrorMessage(error, 'Profile update failed');
+      toast.error(message);
+      return { success: false, error: message };
     }
   };
 
-  const changePassword = async (passwordData: ChangePasswordData): Promise<ContextResponse<void>> => {
+  const changePassword = async (data: ChangePasswordData): Promise<ContextResponse<void>> => {
     try {
-      await authApi.changePassword(passwordData);
-      toast.success('Password changed successfully!');
+      // Other sessions are signed out; this one continues with the new tokens
+      const { access_token, refresh_token } = await authApi.changePassword(data);
+      tokenService.setTokens(access_token, refresh_token);
+      toast.success('Password changed. Other devices have been signed out.');
       return { success: true, data: undefined };
     } catch (error) {
-      let errorMessage = 'Password change failed';
-      if (axios.isAxiosError(error)) {
-        errorMessage = (error.response?.data as ApiError | undefined)?.error ?? errorMessage;
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      toast.error(errorMessage);
-      return { success: false, error: errorMessage };
+      const message = getApiErrorMessage(error, 'Password change failed');
+      toast.error(message);
+      return { success: false, error: message };
     }
   };
 
-  const clearError = (): void => {
-    dispatch({ type: 'CLEAR_ERROR' });
-  };
+  const value: AuthContextValue = { ...state, login, register, logout, updateProfile, changePassword };
 
-  const value: AuthContextValue = {
-    ...state,
-    login,
-    register,
-    logout,
-    updateProfile,
-    changePassword,
-    clearError,
-  };
-
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

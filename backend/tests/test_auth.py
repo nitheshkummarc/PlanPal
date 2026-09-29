@@ -9,7 +9,6 @@ def test_register_success(client):
         'username': 'newuser',
         'password': 'StrongPass!123'
     })
-    print("REGISTRATION RESPONSE:", response.json)
     assert response.status_code == 201
     assert 'access_token' in response.json
     assert 'user' in response.json
@@ -21,7 +20,7 @@ def test_register_duplicate_email(client, init_database):
         'username': 'dupuser',
         'password': 'StrongPass!123'
     })
-    assert response.status_code == 400
+    assert response.status_code == 409
     assert 'error' in response.json
 
 def test_login_success(client, init_database):

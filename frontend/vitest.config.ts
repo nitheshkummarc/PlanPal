@@ -1,13 +1,5 @@
 /**
- * vitest.config.ts - Vitest configuration
- *
- * Why: Vitest shares Vite's transform pipeline (so TS/TSX/JSX compile via the
- *      same React plugin as the dev server). jsdom provides a DOM so React
- *      Testing Library can render components.
- *
- * Env: VITE_BYPASS_AUTH is intentionally NOT defined here — tests for `config`
- *      and `AuthContext` must be able to control it. Tests that need a specific
- *      value set it via `vi.stubEnv` or by importing and re-evaluating.
+ * vitest.config.ts - Tests run with Vite's React transform in a jsdom environment.
  */
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';

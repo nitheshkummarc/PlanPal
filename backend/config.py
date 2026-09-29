@@ -1,115 +1,110 @@
 """
-config.py - Application Configuration
+Environment-specific configuration.
 
-Why: Stores all environment-specific settings (database, JWT, security) for Flask app
+Environment variables (see .env.example):
+    FLASK_ENV              development | production
+    SUPABASE_DATABASE_URL  Supabase PostgreSQL connection string (pooler URL); required
+    SECRET_KEY             Flask secret; required in production
+    JWT_SECRET_KEY         JWT signing key; required in production
+    ALLOWED_ORIGINS        Comma-separated frontend origins allowed by CORS
+    ENABLE_TASK_SCHEDULER  Run the background jobs (reminders, token cleanup) in this process
+    REDIS_URL              Shared rate-limit storage; without it, limits are counted per process
+    PROXY_FIX_X_FOR        Number of reverse proxies in front of the app
+    FORCE_HTTPS            Redirect plain HTTP requests to HTTPS
 
-Classes:
-- Config: Base configuration with database URL, JWT, rate limiting, CORS
-- DevelopmentConfig: Development settings (DEBUG=True)
-- ProductionConfig: Production settings (DEBUG=False)
+The test suite uses its own in-memory SQLite database and needs none of these.
 """
 
 import os
 import secrets
 from datetime import timedelta
+
 from dotenv import load_dotenv
 
-# Load environment variables first
 load_dotenv()
 
+
+def _flag(name, default):
+    return os.environ.get(name, default).lower() in ('true', 'on', '1')
+
+
 class Config:
-    # SECURITY: Generate strong secret keys if not provided
     SECRET_KEY = os.environ.get('SECRET_KEY') or secrets.token_urlsafe(32)
-    
-    # Supabase Database Configuration - Use Supabase pooler URL ONLY
-    # IMPORTANT: SUPABASE_DATABASE_URL must be the pooler connection string
-    SQLALCHEMY_DATABASE_URI = os.environ.get('SUPABASE_DATABASE_URL')
+
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_size': 5,
         'pool_recycle': 1800,
         'pool_pre_ping': True,
-        'pool_timeout': 30
+        'pool_timeout': 30,
     }
-    
-    # Rate-limit storage: Redis when REDIS_URL is set (shared across workers),
-    # otherwise in-memory (per process - fine for a single instance)
+
     RATELIMIT_STORAGE_URI = os.environ.get('REDIS_URL') or 'memory://'
-
-    # Number of reverse proxies in front of the app (Render/nginx = 1). Lets the
-    # rate limiter see the real client IP from X-Forwarded-For. 0 = no proxy.
     PROXY_FIX_X_FOR = int(os.environ.get('PROXY_FIX_X_FOR', '0'))
+    FORCE_HTTPS = _flag('FORCE_HTTPS', 'false')
 
-    # Redirect plain-HTTP requests to HTTPS (on in production)
-    FORCE_HTTPS = os.environ.get('FORCE_HTTPS', 'false').lower() in ['true', 'on', '1']
-    
-    # JWT Configuration - SECURITY: Strong defaults
     JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or secrets.token_urlsafe(32)
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=30)  # SECURITY: Shorter token lifetime
-    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=7)     # SECURITY: Shorter refresh token lifetime
-    
-    # SECURITY: Input validation limits
-    MAX_TEXT_LENGTH = 10000
-    MAX_NAME_LENGTH = 100
-    MAX_EMAIL_LENGTH = 254
-    MAX_TITLE_LENGTH = 200
-    
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=30)
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=7)
+
     ALLOWED_ORIGINS = [
         origin.strip()
-        for origin in os.environ.get(
-            'ALLOWED_ORIGINS',
-            'http://localhost:5173,http://127.0.0.1:5173'
-        ).split(',')
+        for origin in os.environ.get('ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',')
         if origin.strip()
     ]
-    ENABLE_TASK_SCHEDULER = os.environ.get('ENABLE_TASK_SCHEDULER', 'false').lower() in ['true', 'on', '1']
+    ENABLE_TASK_SCHEDULER = _flag('ENABLE_TASK_SCHEDULER', 'false')
+
+    @staticmethod
+    def database_uri():
+        """Read when the app is created, so the environment can be set after import."""
+        uri = os.environ.get('SUPABASE_DATABASE_URL')
+        if not uri:
+            raise RuntimeError('SUPABASE_DATABASE_URL is not set. Add the Supabase connection string to backend/.env.')
+        return uri
+
 
 class DevelopmentConfig(Config):
     DEBUG = True
-    # Use Supabase pooler for development, fallback to local SQLite if not set
-    SQLALCHEMY_DATABASE_URI = os.environ.get('SUPABASE_DATABASE_URL') or 'sqlite:///local_dev.db'
-    
-    # We remove the import-time raise ValueError so the file can be imported without crashing.
 
 
 class TestingConfig(Config):
     TESTING = True
-    DEBUG = True
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    # Unhandled errors return the JSON 500 response instead of propagating into the test
+    PROPAGATE_EXCEPTIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {}
+    SECRET_KEY = 'test-secret-key-with-at-least-32-characters'
+    JWT_SECRET_KEY = 'test-jwt-secret-key-with-at-least-32-chars'
+    ALLOWED_ORIGINS = ['http://localhost:5173']
     RATELIMIT_STORAGE_URI = 'memory://'
+    BCRYPT_LOG_ROUNDS = 4  # faster hashing in tests
     ENABLE_TASK_SCHEDULER = False
+    FORCE_HTTPS = False
+    PROXY_FIX_X_FOR = 0
+
+    @staticmethod
+    def database_uri():
+        return 'sqlite:///:memory:'
 
 
 class ProductionConfig(Config):
     DEBUG = False
-    # Render (and the local nginx) sit in front of the app as one proxy hop
     PROXY_FIX_X_FOR = int(os.environ.get('PROXY_FIX_X_FOR', '1'))
-    FORCE_HTTPS = os.environ.get('FORCE_HTTPS', 'true').lower() in ['true', 'on', '1']
-    # Production should always use environment variables
-    SQLALCHEMY_DATABASE_URI = os.environ.get('SUPABASE_DATABASE_URL') or Config.SQLALCHEMY_DATABASE_URI
+    FORCE_HTTPS = _flag('FORCE_HTTPS', 'true')
 
     @classmethod
     def validate(cls):
-        missing = []
-        if not os.environ.get('SECRET_KEY'):
-            missing.append('SECRET_KEY')
-        if not os.environ.get('JWT_SECRET_KEY'):
-            missing.append('JWT_SECRET_KEY')
-        if not os.environ.get('SUPABASE_DATABASE_URL'):
-            missing.append('SUPABASE_DATABASE_URL')
-        
-        allowed_origins = os.environ.get('ALLOWED_ORIGINS')
-        if not allowed_origins or 'localhost:5173' in allowed_origins or '127.0.0.1:5173' in allowed_origins:
-            missing.append('ALLOWED_ORIGINS (must be set and not use default dev localhost)')
-
+        missing = [name for name in ('SECRET_KEY', 'JWT_SECRET_KEY', 'SUPABASE_DATABASE_URL')
+                   if not os.environ.get(name)]
+        origins = os.environ.get('ALLOWED_ORIGINS', '')
+        if not origins or 'localhost:5173' in origins or '127.0.0.1:5173' in origins:
+            missing.append('ALLOWED_ORIGINS (must be set to the deployed frontend origin)')
         if missing:
-            raise RuntimeError("Missing or invalid required production environment variables: " + ", ".join(missing))
+            raise RuntimeError('Missing or invalid production environment variables: ' + ', '.join(missing))
 
 
 config = {
     'development': DevelopmentConfig,
     'production': ProductionConfig,
     'testing': TestingConfig,
-    'default': DevelopmentConfig
+    'default': DevelopmentConfig,
 }

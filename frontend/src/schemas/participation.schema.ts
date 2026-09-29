@@ -1,11 +1,6 @@
 /**
- * participation.schema.ts - Zod schema for Participation domain model
- *
- * Why: Runtime validation of Participation data from backend API responses.
- * Shape derived from backend Participation.to_dict() in models/__init__.py.
- *
- * Note: NOT prefixed with "App" because "Participation" doesn't collide
- * with any DOM global type (unlike Event, Notification).
+ * participation.schema.ts - Shape of a participation as returned by the API
+ * (backend Participation.to_dict()).
  */
 
 import { z } from 'zod';
@@ -21,3 +16,5 @@ export const ParticipationSchema = z.object({
   created_at: z.iso.datetime(),
   updated_at: z.iso.datetime(),
 });
+
+export type ParticipationStatus = z.infer<typeof ParticipationStatus>;

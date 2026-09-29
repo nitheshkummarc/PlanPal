@@ -13,22 +13,22 @@ const Home = () => {
 
   const features = [
     {
-      icon: SparklesIcon,
-      title: 'Personalized Experience',
-      description: 'Find events that match your interests, location, and budget preferences. Create your perfect event calendar.',
-      color: 'bg-purple-100 text-purple-600'
-    },
-    {
       icon: EyeIcon,
       title: 'Easy Discovery',
-      description: 'Browse events by category, location, and date. Find the perfect events that match your interests and schedule.',
+      description: 'Browse upcoming events by tag, location and date, or search past events and people who share your interests.',
       color: 'bg-blue-100 text-blue-600'
     },
     {
       icon: CalendarIcon,
-      title: 'Seamless Event Creation',
-      description: 'Easily create and manage your own events. Customize details, invite participants, and track engagement—all in one place.',
+      title: 'Your Own Calendar',
+      description: 'Join events as interested or going, and see everything you organise or attend in one calendar.',
       color: 'bg-yellow-100 text-yellow-600'
+    },
+    {
+      icon: SparklesIcon,
+      title: 'Stay in the Loop',
+      description: 'Get notified when someone joins your event, when an event you joined changes, and a day before it starts.',
+      color: 'bg-purple-100 text-purple-600'
     }
   ];
 
@@ -93,14 +93,14 @@ const Home = () => {
               Why Choose PlanPal?
             </h2>
             <p className="text-xl text-gray-600 dark:text-gray-400 max-w-3xl mx-auto">
-              Our intelligent matching system connects you with events and people that truly align with your preferences.
+              Create events, find people with the same interests, and keep track of what you're going to.
             </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
-            {features.map((feature, index) => (
+            {features.map((feature) => (
               <div
-                key={index}
+                key={feature.title}
                 className="bg-white/90 dark:bg-gray-900/80 rounded-2xl p-8 text-center shadow-xl hover:shadow-2xl transition-all transform hover:-translate-y-2 hover:scale-105 border border-gray-200 dark:border-gray-800 backdrop-blur-md"
                 style={{ transition: 'box-shadow 0.3s, transform 0.3s' }}
               >

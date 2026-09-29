@@ -1,5 +1,5 @@
-"""Tests for the end-to-end fixes: logout revocation, validation rules shared with
-the frontend, past events, list tags/sorting, delete notifications, scheduler."""
+"""Logout revocation, validation rules shared with the frontend, past events, list tags and
+sorting, cancellation notices, the scheduler, tag search and HTTPS redirects."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -7,8 +7,9 @@ import pytest
 from flask_jwt_extended import create_access_token, create_refresh_token
 
 from app import db
-from app.models import Event, EventTag, Notification, Participation, RevokedToken, Tag, User
+from app.models import Event, Notification, Participation, RevokedToken, Tag, User, event_tags
 from app.services.task_scheduler import TaskScheduler
+from conftest import auth as _auth
 
 
 def _make_user(name='Owner Person', username='owner', email='owner@example.com', role='user'):
@@ -23,7 +24,7 @@ def _make_event(owner, title='Tech Meetup', hours_ahead=72, **kwargs):
         title=title,
         timestamp=datetime.now(timezone.utc) + timedelta(hours=hours_ahead),
         place='Hall', location='Main St', city='Chennai', state='Tamil Nadu',
-        source_type='text', posted_by=owner.user_id, **kwargs,
+        posted_by=owner.user_id, **kwargs,
     )
     db.session.add(event)
     db.session.commit()
@@ -33,10 +34,6 @@ def _make_event(owner, title='Tech Meetup', hours_ahead=72, **kwargs):
 def _join(event, user, status='going'):
     db.session.add(Participation(event_id=event.event_id, user_id=user.user_id, status=status))
     db.session.commit()
-
-
-def _auth(user):
-    return {'Authorization': f'Bearer {create_access_token(identity=str(user.user_id))}'}
 
 
 def _register(client, **overrides):
@@ -94,7 +91,7 @@ def test_register_accepts_valid_input(client, overrides):
     ({'username': 'has space'}, 'Username'),
     ({'name': 'John2'}, 'Name'),
     ({'profile_image_url': 'javascript:alert(1)'}, 'Profile image URL'),
-    ({'preferences': 'music'}, 'Preferences'),
+    ({'interest_tag_ids': 'music'}, 'interest_tag_ids'),
 ])
 def test_register_rejects_invalid_input(client, overrides, message_part):
     response = _register(client, **overrides)
@@ -104,7 +101,7 @@ def test_register_rejects_invalid_input(client, overrides, message_part):
 
 def test_usernames_are_unique_ignoring_case(client, owner):
     response = _register(client, username='OWNER')
-    assert response.status_code == 400
+    assert response.status_code == 409
     assert response.get_json()['error'] == 'Username already taken'
 
 
@@ -127,18 +124,18 @@ def test_non_object_json_body_is_rejected(client, owner):
 # --- Past events stay viewable -------------------------------------------------
 
 def test_past_events_are_viewable_but_not_listed_as_upcoming(client, owner):
-    past = _make_event(owner, title='Old Meetup', hours_ahead=-48, is_active=False)
+    past = _make_event(owner, title='Old Meetup', hours_ahead=-48)
     upcoming = _make_event(owner, title='New Meetup')
     headers = _auth(owner)
 
-    assert client.get(f'/api/events/{past.event_id}').status_code == 200
-    listed = [e['event_id'] for e in client.get('/api/events/').get_json()['events']]
+    assert client.get(f'/api/events/{past.event_id}', headers=headers).status_code == 200
+    listed = [e['event_id'] for e in client.get('/api/events/', headers=headers).get_json()['events']]
     assert listed == [str(upcoming.event_id)]
 
     mine = {e['event_id'] for e in client.get('/api/events/my', headers=headers).get_json()['events']}
     assert mine == {str(past.event_id), str(upcoming.event_id)}
 
-    searched = client.get('/api/search/?type=events&q=Meetup').get_json()['results']['events']
+    searched = client.get('/api/search/?type=events&q=Meetup', headers=headers).get_json()['results']['events']
     # upcoming first, then past
     assert [e['event_id'] for e in searched] == [str(upcoming.event_id), str(past.event_id)]
 
@@ -152,16 +149,12 @@ def test_past_events_cannot_be_edited_or_joined(client, owner, member):
 # --- Lists include tags; sorting; LIKE escaping --------------------------------
 
 def test_event_lists_include_tags(client, owner):
-    event = _make_event(owner)
-    tag = Tag(name='Music')
-    db.session.add(tag)
-    db.session.flush()
-    db.session.add(EventTag(event_id=event.event_id, tag_id=tag.tag_id))
-    db.session.commit()
+    _make_event(owner, tags=[Tag(name='Music')])
+    headers = _auth(owner)
 
-    listed = client.get('/api/events/').get_json()['events'][0]
+    listed = client.get('/api/events/', headers=headers).get_json()['events'][0]
     assert [t['name'] for t in listed['tags']] == ['Music']
-    searched = client.get('/api/search/?type=events').get_json()['results']['events'][0]
+    searched = client.get('/api/search/?type=events', headers=headers).get_json()['results']['events'][0]
     assert [t['name'] for t in searched['tags']] == ['Music']
 
 
@@ -169,8 +162,9 @@ def test_sort_by_created_at_returns_newest_first(client, owner):
     created = datetime.now(timezone.utc)
     first = _make_event(owner, title='First created', hours_ahead=10, created_at=created - timedelta(hours=1))
     second = _make_event(owner, title='Second created', hours_ahead=100, created_at=created)
-    by_date = [e['title'] for e in client.get('/api/events/?sort_by=date').get_json()['events']]
-    newest = [e['title'] for e in client.get('/api/events/?sort_by=created_at').get_json()['events']]
+    headers = _auth(owner)
+    by_date = [e['title'] for e in client.get('/api/events/?sort_by=date', headers=headers).get_json()['events']]
+    newest = [e['title'] for e in client.get('/api/events/?sort_by=created_at', headers=headers).get_json()['events']]
     assert by_date == [first.title, second.title]
     assert newest == [second.title, first.title]
 
@@ -178,7 +172,8 @@ def test_sort_by_created_at_returns_newest_first(client, owner):
 def test_search_wildcards_are_matched_literally(client, owner):
     _make_event(owner, title='Flat 50% off')
     _make_event(owner, title='Something else')
-    titles = [e['title'] for e in client.get('/api/search/?type=events&q=%25').get_json()['results']['events']]
+    response = client.get('/api/search/?type=events&q=%25', headers=_auth(owner))
+    titles = [e['title'] for e in response.get_json()['results']['events']]
     assert titles == ['Flat 50% off']
 
 
@@ -188,15 +183,12 @@ def test_delete_event_notifies_participants_and_removes_tags(client, owner, memb
     event = _make_event(owner)
     _join(event, owner)
     _join(event, member, status='interested')
-    tag = Tag(name='Art')
-    db.session.add(tag)
-    db.session.flush()
-    db.session.add(EventTag(event_id=event.event_id, tag_id=tag.tag_id))
+    event.tags = [Tag(name='Art')]
     db.session.commit()
     event_id = event.event_id
 
     assert client.delete(f'/api/events/{event_id}', headers=_auth(owner)).status_code == 200
-    assert EventTag.query.filter_by(event_id=event_id).count() == 0
+    assert db.session.query(event_tags).filter(event_tags.c.event_id == event_id).count() == 0
     assert Participation.query.filter_by(event_id=event_id).count() == 0
 
     cancelled = Notification.query.filter_by(type='event_cancelled').all()
@@ -221,8 +213,7 @@ def test_scheduler_reminders_are_created_once_and_past_events_expire(app, owner,
     reminders = Notification.query.filter_by(type='event_reminder').all()
     assert [(n.user_id, n.event_id) for n in reminders] == [(member.user_id, soon.event_id)]
     assert 'UTC' in reminders[0].message
-    assert db.session.get(Event, ended.event_id).is_active is False
-    assert db.session.get(Event, soon.event_id).is_active is True
+    assert Notification.query.filter_by(event_id=ended.event_id, type='event_reminder').count() == 0
 
 
 def test_scheduler_deletes_expired_revoked_tokens(app):
@@ -247,12 +238,12 @@ def test_tag_validation_for_admins(client):
     assert client.post('/api/tags/', headers=headers, json={'name': 'Music', 'color': 'red'}).status_code == 400
     assert client.post('/api/tags/', headers=headers, json={'name': 'Music', 'color': '#FF5733'}).status_code == 201
     duplicate = client.post('/api/tags/', headers=headers, json={'name': 'music'})
-    assert duplicate.status_code == 400
+    assert duplicate.status_code == 409
     assert duplicate.get_json()['error'] == 'Tag already exists'
 
 
-def test_notification_types_include_every_type_the_app_creates(client, owner):
-    types = client.get('/api/notifications/types', headers=_auth(owner)).get_json()['types']
+def test_notification_types_include_every_type_the_app_creates():
+    from app.models import NOTIFICATION_TYPES as types
     for expected in ['welcome', 'event_joined', 'event_reminder', 'event_update',
                      'new_participant', 'participant_left', 'event_cancelled']:
         assert expected in types
@@ -263,20 +254,13 @@ def test_notification_types_include_every_type_the_app_creates(client, owner):
 def test_search_by_tags_only_name_only_or_both(client, owner):
     music = Tag(name='Music')
     art = Tag(name='Art')
-    db.session.add_all([music, art])
-    db.session.flush()
-    jazz = _make_event(owner, title='Jazz Night')
-    gallery = _make_event(owner, title='Gallery Walk')
-    jazz_art = _make_event(owner, title='Jazz Painting')
-    db.session.add_all([
-        EventTag(event_id=jazz.event_id, tag_id=music.tag_id),
-        EventTag(event_id=gallery.event_id, tag_id=art.tag_id),
-        EventTag(event_id=jazz_art.event_id, tag_id=art.tag_id),
-    ])
-    db.session.commit()
+    _make_event(owner, title='Jazz Night', tags=[music])
+    _make_event(owner, title='Gallery Walk', tags=[art])
+    _make_event(owner, title='Jazz Painting', tags=[art])
+    headers = _auth(owner)
 
     def titles(url):
-        return sorted(e['title'] for e in client.get(url).get_json()['results']['events'])
+        return sorted(e['title'] for e in client.get(url, headers=headers).get_json()['results']['events'])
 
     # Tags alone (no text): every event with any selected tag
     assert titles(f'/api/search/?type=events&tag_ids={art.tag_id}') == ['Gallery Walk', 'Jazz Painting']
@@ -306,5 +290,5 @@ def test_https_is_forced_except_for_health_checks(monkeypatch):
 
     # Health checks stay reachable over HTTP for the hosting platform
     assert client.get('/api/system/health', base_url='http://planpal.example').status_code == 200
-    # HTTPS requests are served normally
-    assert client.get('/api/tags/', base_url='https://planpal.example').status_code == 200
+    # HTTPS requests reach the route (401: it requires a token)
+    assert client.get('/api/tags/', base_url='https://planpal.example').status_code == 401

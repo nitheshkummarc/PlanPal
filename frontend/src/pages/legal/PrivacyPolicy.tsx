@@ -23,7 +23,7 @@ const PrivacyPolicy = () => (
         <li><strong>Profile details you choose to add:</strong> bio, profile image URL and interests.</li>
         <li><strong>Events and participation:</strong> events you create (title, description, date and time, venue, city, state, price, capacity, tags) and the events you join, including whether you are "interested" or "going".</li>
         <li><strong>Notifications:</strong> the in-app notifications generated for you and whether you have read them.</li>
-        <li><strong>Technical data:</strong> your IP address is used briefly to limit repeated login and sign-up attempts. Our hosting providers may keep standard server logs.</li>
+        <li><strong>Technical data:</strong> your IP address is used briefly to limit repeated sign-in, sign-up and session-renewal attempts. Our hosting providers may keep standard server logs.</li>
       </ul>
     </LegalSection>
 
@@ -48,7 +48,7 @@ const PrivacyPolicy = () => (
       <p>
         PlanPal does not use tracking or advertising cookies. To keep you signed in, your browser
         stores two sign-in tokens in its local storage. Your theme choice (light or dark) is also
-        stored there. Logging out removes the tokens from your browser and revokes them on our server.
+        stored there. Logging out removes the tokens from your browser and revokes them on our server. Changing your password signs you out on every other device.
       </p>
     </LegalSection>
 

@@ -1,80 +1,71 @@
 /**
- * useApi.ts - Custom React hooks for API calls, pagination, debouncing, and localStorage
- *
- * Why: Reusable hooks that abstract common patterns across the app
+ * useApi.ts - Hooks for API calls, pagination and debouncing.
  */
 
-import { useState, useEffect, useCallback, type DependencyList } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import axios from 'axios';
-import type { ApiError } from '../types/api';
+import { getApiErrorMessage } from '../utils/helpers';
 
-// --- useApi ---
-
-interface UseApiReturn<T> {
-  data: T | null;
+interface UseApiReturn<TArgs extends unknown[], TResult> {
+  data: TResult | null;
   loading: boolean;
   error: string | null;
-  execute: (...args: any[]) => Promise<T>;
+  execute: (...args: TArgs) => Promise<TResult>;
   reset: () => void;
 }
 
-export const useApi = <T>(
-  apiFunction: (...args: any[]) => Promise<T>,
-  dependencies: DependencyList = []
-): UseApiReturn<T> => {
-  const [data, setData] = useState<T | null>(null);
+/**
+ * Wraps an API function with data/loading/error state. Only the most recent call
+ * updates the state, so a slow earlier response cannot overwrite a newer one
+ * (e.g. when the search text changes while a request is in flight).
+ */
+export const useApi = <TArgs extends unknown[], TResult>(
+  apiFunction: (...args: TArgs) => Promise<TResult>,
+  { showErrorToast = true }: { showErrorToast?: boolean } = {}
+): UseApiReturn<TArgs, TResult> => {
+  const [data, setData] = useState<TResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const latestCall = useRef(0);
+  const apiRef = useRef(apiFunction);
+  apiRef.current = apiFunction;
 
-  const execute = useCallback(async (...args: any[]): Promise<T> => {
+  const execute = useCallback(async (...args: TArgs): Promise<TResult> => {
+    const call = ++latestCall.current;
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
-      const result = await apiFunction(...args);
-      setData(result);
+      const result = await apiRef.current(...args);
+      if (call === latestCall.current) setData(result);
       return result;
-    } catch (err: unknown) {
-      let errorMessage = 'An error occurred';
-      if (axios.isAxiosError(err)) {
-        errorMessage = (err.response?.data as ApiError | undefined)?.error ?? err.message;
-      } else if (err instanceof Error) {
-        errorMessage = err.message;
+    } catch (err) {
+      if (call === latestCall.current) {
+        const message = getApiErrorMessage(err, 'Something went wrong');
+        setError(message);
+        if (showErrorToast) toast.error(message);
       }
-      setError(errorMessage);
-      toast.error(errorMessage);
       throw err;
     } finally {
-      setLoading(false);
+      if (call === latestCall.current) setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, dependencies);
+  }, [showErrorToast]);
 
   const reset = useCallback(() => {
+    latestCall.current += 1;  // ignore responses still in flight
     setData(null);
     setError(null);
     setLoading(false);
   }, []);
 
-  return {
-    data,
-    loading,
-    error,
-    execute,
-    reset,
-  };
+  return { data, loading, error, execute, reset };
 };
-
-// --- usePagination ---
 
 interface UsePaginationReturn {
   page: number;
   limit: number;
   total: number;
   totalPages: number;
-  setPage: (page: number) => void;
-  setLimit: React.Dispatch<React.SetStateAction<number>>;
-  setTotal: React.Dispatch<React.SetStateAction<number>>;
+  setTotal: (total: number) => void;
   nextPage: () => void;
   prevPage: () => void;
   reset: () => void;
@@ -82,65 +73,35 @@ interface UsePaginationReturn {
   hasPrevPage: boolean;
 }
 
-export const usePagination = (initialPage = 1, initialLimit = 10): UsePaginationReturn => {
-  const [page, setPage] = useState(initialPage);
-  const [limit, setLimit] = useState(initialLimit);
+export const usePagination = (initialLimit = 10): UsePaginationReturn => {
+  const [requestedPage, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const totalPages = Math.max(Math.ceil(total / initialLimit), 1);
+  // If the total shrinks (e.g. items deleted on the last page), stay within range
+  const page = Math.min(requestedPage, totalPages);
 
-  const totalPages = Math.ceil(total / limit);
-
-  const goToPage = (newPage: number): void => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      setPage(newPage);
-    }
-  };
-
-  const nextPage = (): void => {
-    if (page < totalPages) {
-      setPage(page + 1);
-    }
-  };
-
-  const prevPage = (): void => {
-    if (page > 1) {
-      setPage(page - 1);
-    }
-  };
-
-  const reset = (): void => {
-    setPage(1);
-    setTotal(0);
-  };
+  const reset = useCallback(() => setPage(1), []);
 
   return {
     page,
-    limit,
+    limit: initialLimit,
     total,
     totalPages,
-    setPage: goToPage,
-    setLimit,
     setTotal,
-    nextPage,
-    prevPage,
+    nextPage: () => setPage(Math.min(page + 1, totalPages)),
+    prevPage: () => setPage(Math.max(page - 1, 1)),
     reset,
     hasNextPage: page < totalPages,
     hasPrevPage: page > 1,
   };
 };
 
-// --- useDebounce ---
-
 export const useDebounce = <T>(value: T, delay: number): T => {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
 
   useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-
-    return () => {
-      clearTimeout(handler);
-    };
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(handler);
   }, [value, delay]);
 
   return debouncedValue;

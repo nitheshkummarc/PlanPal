@@ -1,14 +1,10 @@
 /**
- * setupTests.ts - Runs before every Vitest test file.
- *
- * Why: Registers @testing-library/jest-dom matchers (toBeInTheDocument, etc.)
- *      and provides a clean localStorage between tests so token storage tests
- *      don't leak state into each other.
+ * setupTests.ts - Runs before every test file: registers the jest-dom matchers and
+ * gives each test empty browser storage and fresh mocks.
  */
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, vi } from 'vitest';
 
-// Hard-clear localStorage and sessionStorage between tests.
 beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();

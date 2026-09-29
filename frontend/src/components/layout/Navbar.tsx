@@ -7,8 +7,8 @@ import {
   MoonIcon,
   UserIcon,
   CalendarDaysIcon,
-  MagnifyingGlassIcon,
-  BellIcon
+  BellIcon,
+  TagIcon
 } from '@heroicons/react/24/outline';
 import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
@@ -48,7 +48,6 @@ const Navbar = () => {
     <nav className="bg-white dark:bg-gray-800 shadow-lg border-b border-gray-200 dark:border-gray-700">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
-          {/* Logo and Brand */}
           <div className="flex items-center">
             <Link to="/dashboard" className="flex items-center">
             <CalendarDaysIcon className="h-8 w-8 text-blue-600 dark:text-blue-400" />
@@ -57,7 +56,6 @@ const Navbar = () => {
               </span>
             </Link>
 
-            {/* Desktop Navigation */}
             {isAuthenticated && (
               <div className="hidden md:flex ml-10 space-x-8">
                 <Link
@@ -87,16 +85,13 @@ const Navbar = () => {
             )}
           </div>
 
-          {/* Search Bar (Desktop) */}
           {isAuthenticated && (
             <div className="hidden md:flex items-center flex-1 max-w-lg mx-8">
               <SearchBar />
             </div>
           )}
 
-          {/* Right side items */}
           <div className="flex items-center space-x-4">
-            {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
               className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
@@ -111,10 +106,8 @@ const Navbar = () => {
 
             {isAuthenticated ? (
               <>
-                {/* Notifications */}
                 <NotificationBell />
 
-                {/* User Menu */}
                 <div className="relative">
                   <button
                     onClick={() => setIsOpen(!isOpen)}
@@ -138,7 +131,6 @@ const Navbar = () => {
                     </span>
                   </button>
 
-                  {/* Dropdown Menu */}
                   {isOpen && (
                     <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 z-50">
                       <div className="py-1">
@@ -166,6 +158,16 @@ const Navbar = () => {
                           <BellIcon className="h-4 w-4 mr-3" />
                           Notifications
                         </Link>
+                        {user?.role === 'admin' && (
+                          <Link
+                            to="/admin/tags"
+                            onClick={() => setIsOpen(false)}
+                            className="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            <TagIcon className="h-4 w-4 mr-3" />
+                            Manage tags
+                          </Link>
+                        )}
                         <hr className="my-1 border-gray-200 dark:border-gray-700" />
                         <button
                           onClick={handleLogout}
@@ -178,7 +180,6 @@ const Navbar = () => {
                   )}
                 </div>
 
-                {/* Mobile menu button */}
                 <button
                   onClick={() => setIsOpen(!isOpen)}
                   className="md:hidden p-2 rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
@@ -209,11 +210,9 @@ const Navbar = () => {
           </div>
         </div>
 
-        {/* Mobile Navigation Menu */}
         {isAuthenticated && isOpen && (
           <div className="md:hidden border-t border-gray-200 dark:border-gray-700 pb-4">
             <div className="pt-4 space-y-1">
-              {/* Search Bar (Mobile) */}
               <div className="px-2 pb-4">
                 <SearchBar />
               </div>
@@ -250,7 +249,7 @@ const Navbar = () => {
         )}
       </div>
 
-      {/* Click outside to close dropdown */}
+      {/* Clicking outside the menu closes it */}
       {isOpen && (
         <div
           className="fixed inset-0 z-40"

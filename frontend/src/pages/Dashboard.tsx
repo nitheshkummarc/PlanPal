@@ -1,135 +1,64 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import {
-  CalendarDaysIcon,
-  UserGroupIcon,
-  PlusIcon,
-  EyeIcon,
-  SparklesIcon,
-} from '@heroicons/react/24/outline';
-import {
-  ChartBarIcon as ChartBarSolid
-} from '@heroicons/react/24/solid';
+import { CalendarDaysIcon, EyeIcon, PlusIcon, SparklesIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import { ChartBarIcon as ChartBarSolid } from '@heroicons/react/24/solid';
 import { useAuth } from '../context/AuthContext';
 import { eventsApi } from '../api/eventsApi';
-import { notificationsApi } from '../api/notificationsApi';
 import UpcomingEventCard from '../components/ui/UpcomingEventCard';
-import { onEventsChanged } from '../utils/helpers';
 import { LoadingSpinner } from '../components/ui/Loading';
-import type { AppEvent, AppNotification } from '../types';
+import { getApiErrorMessage, onEventsChanged } from '../utils/helpers';
+import type { AppEvent } from '../types';
+
+interface Stats {
+  organised: number;
+  joined: number;
+}
 
 const Dashboard = () => {
-  const { user, loading: authLoading, isAuthenticated } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const [stats, setStats] = useState({
-    eventsJoined: 0,
-    eventsCreated: 0,
-    totalEvents: 0
-  });
+  const [stats, setStats] = useState<Stats>({ organised: 0, joined: 0 });
   const [upcomingEvents, setUpcomingEvents] = useState<AppEvent[]>([]);
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!authLoading && isAuthenticated && user) {
-      loadDashboardData();
-    } else if (!authLoading && !isAuthenticated) {
-      setStats({
-        eventsJoined: 0,
-        eventsCreated: 0,
-        totalEvents: 0
-      });
-      setUpcomingEvents([]);
-      setNotifications([]);
-      setLoading(false);
-    }
-  }, [authLoading, user, isAuthenticated]);
-
-  useEffect(() => {
-    if (!isAuthenticated || !user) return;
-
-    // Reload when events change in this tab or another tab (no polling)
-    return onEventsChanged(loadDashboardData);
-  }, [isAuthenticated, user]);
-
-  const loadDashboardData = async () => {
+  const loadDashboard = useCallback(async () => {
     try {
-      setLoading(true);
-
-      if (!user) {
-        setStats({
-          eventsJoined: 0,
-          eventsCreated: 0,
-          totalEvents: 0
-        });
-        setUpcomingEvents([]);
-        setNotifications([]);
-        return;
-      }
-
-      const promises = [
-        eventsApi.getMyEvents().catch(() => {
-          return { events: [] };
-        }),
-        eventsApi.getJoinedEvents().catch(() => {
-          return { events: [] };
-        }),
-        notificationsApi.getNotifications({ per_page: 5, page: 1 }).catch(() => {
-          return { notifications: [] };
-        })
-      ];
-
-      const [createdEventsRes, joinedEventsRes, notificationsRes] = await Promise.all(promises);
-
-      const createdEvents = (createdEventsRes as any)?.events || [];
-      const joinedEvents = (joinedEventsRes as any)?.events || [];
-
-      const allEvents = [...createdEvents, ...joinedEvents];
-      const uniqueEvents = Array.from(
-        new Map(allEvents.map((event: any) => [event.event_id || event.id, event])).values()
-      );
-
-      const now = new Date();
-      const upcoming = uniqueEvents
-        .filter((event: any) => new Date(event.timestamp) > now)
-        .sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-
-      setUpcomingEvents(upcoming as AppEvent[]);
-
-      const createdEventIds = new Set(createdEvents.map((e: any) => e.event_id || e.id));
-      const joinedOnlyEvents = joinedEvents.filter((e: any) => !createdEventIds.has(e.event_id || e.id));
-
-      setStats({
-        eventsJoined: joinedOnlyEvents.length,
-        eventsCreated: createdEvents.length,
-        totalEvents: uniqueEvents.length
-      });
-      setNotifications((notificationsRes as any)?.notifications || []);
-    } catch (error) {
-      setStats({
-        eventsJoined: 0,
-        eventsCreated: 0,
-        totalEvents: 0
-      });
-      setUpcomingEvents([]);
-      setNotifications([]);
+      // Totals come from the lists' pagination; only upcoming events are loaded in full
+      const [organised, joined, upcoming] = await Promise.all([
+        eventsApi.getMyEvents(),
+        eventsApi.getJoinedEvents(),
+        eventsApi.getAllMyEvents({ upcoming: true }),
+      ]);
+      setStats({ organised: organised.pagination.total, joined: joined.pagination.total });
+      setUpcomingEvents(upcoming);
+      setError(null);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to load your events'));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  if (authLoading || loading) {
+  useEffect(() => {
+    void loadDashboard();
+    // Reload when events change in this tab or another tab
+    return onEventsChanged(() => void loadDashboard());
+  }, [loadDashboard]);
+
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="text-center">
-          <LoadingSpinner size="xl" />
-          <p className="text-gray-600 dark:text-gray-400 mt-4 text-lg">
-            {authLoading ? 'Checking authentication...' : 'Loading...'}
-          </p>
-        </div>
+        <LoadingSpinner size="xl" />
       </div>
     );
   }
+
+  const statCards = [
+    { label: 'Events Joined', value: stats.joined, icon: CalendarDaysIcon, color: 'text-blue-600', text: 'text-blue-700 dark:text-blue-300' },
+    { label: 'Events Organised', value: stats.organised, icon: UserGroupIcon, color: 'text-green-600', text: 'text-green-700 dark:text-green-300' },
+    { label: 'Total Events', value: stats.joined + stats.organised, icon: ChartBarSolid, color: 'text-orange-600', text: 'text-orange-700 dark:text-orange-300' },
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/30 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
@@ -138,7 +67,7 @@ const Dashboard = () => {
           <div>
             <h1 className="text-4xl font-bold text-white mb-2 flex items-center gap-3">
               <SparklesIcon className="h-8 w-8 text-yellow-200" />
-              Welcome, {user?.username || 'User'}!
+              Welcome, {user?.username}!
             </h1>
             <p className="text-blue-100 text-lg">Here's your latest activity</p>
           </div>
@@ -152,22 +81,21 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {error && (
+          <div className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 rounded-xl p-4 flex items-center justify-between">
+            <span>{error}</span>
+            <button onClick={() => { setLoading(true); void loadDashboard(); }} className="font-medium underline">Retry</button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white/80 dark:bg-gray-800/80 rounded-xl p-6 flex flex-col items-center shadow-lg">
-            <CalendarDaysIcon className="h-8 w-8 text-blue-600 mb-2" />
-            <div className="text-3xl font-bold text-blue-700 dark:text-blue-300">{stats.eventsJoined}</div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Events Joined</div>
-          </div>
-          <div className="bg-white/80 dark:bg-gray-800/80 rounded-xl p-6 flex flex-col items-center shadow-lg">
-            <UserGroupIcon className="h-8 w-8 text-green-600 mb-2" />
-            <div className="text-3xl font-bold text-green-700 dark:text-green-300">{stats.eventsCreated}</div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Events Organized</div>
-          </div>
-          <div className="bg-white/80 dark:bg-gray-800/80 rounded-xl p-6 flex flex-col items-center shadow-lg">
-            <ChartBarSolid className="h-8 w-8 text-orange-600 mb-2" />
-            <div className="text-3xl font-bold text-orange-700 dark:text-orange-300">{stats.totalEvents}</div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">Total Events</div>
-          </div>
+          {statCards.map((card) => (
+            <div key={card.label} className="bg-white/80 dark:bg-gray-800/80 rounded-xl p-6 flex flex-col items-center shadow-lg">
+              <card.icon className={`h-8 w-8 mb-2 ${card.color}`} />
+              <div className={`text-3xl font-bold ${card.text}`}>{card.value}</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">{card.label}</div>
+            </div>
+          ))}
         </div>
 
         <div className="bg-white/80 dark:bg-gray-800/80 rounded-2xl shadow-lg p-8">
@@ -185,14 +113,8 @@ const Dashboard = () => {
             </div>
           </div>
           {upcomingEvents.length > 0 ? (
-            <div className={`space-y-4 ${upcomingEvents.length > 5 ? 'max-h-[600px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent' : ''}`}>
-              {upcomingEvents.map((event: any) => (
-                <UpcomingEventCard
-                  key={event.event_id || event.id}
-                  event={event}
-                  user={user}
-                />
-              ))}
+            <div className={`space-y-4 ${upcomingEvents.length > 5 ? 'max-h-[600px] overflow-y-auto pr-2' : ''}`}>
+              {upcomingEvents.map((event) => <UpcomingEventCard key={event.event_id} event={event} user={user} />)}
             </div>
           ) : (
             <div className="text-center py-16 text-gray-500 dark:text-gray-400">
@@ -200,16 +122,10 @@ const Dashboard = () => {
               <p className="text-xl font-medium mb-2">No upcoming events</p>
               <p className="text-sm mb-6">Create or join your first event to get started!</p>
               <div className="flex gap-3 justify-center">
-                <button
-                  onClick={() => navigate('/create-event')}
-                  className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-                >
+                <button onClick={() => navigate('/create-event')} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors">
                   Create Event
                 </button>
-                <button
-                  onClick={() => navigate('/events')}
-                  className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-6 py-2 rounded-lg font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                >
+                <button onClick={() => navigate('/events')} className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-6 py-2 rounded-lg font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
                   Browse Events
                 </button>
               </div>

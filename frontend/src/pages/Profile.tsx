@@ -1,148 +1,85 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  UserIcon,
-  PencilIcon,
-  CalendarDaysIcon,
-  KeyIcon,
-  BellIcon
-} from '@heroicons/react/24/outline';
+import { BellIcon, CalendarDaysIcon, KeyIcon, PencilIcon, UserIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthContext';
+import { tagsApi } from '../api/tagsApi';
 import { LoadingButton } from '../components/ui/Loading';
 import TagChip from '../components/ui/TagChip';
-import { tagsApi } from '../api/tagsApi';
-import { useApi } from '../hooks/useApi';
-import { validateForm, profileSchema, validatePassword, PASSWORD_MESSAGE } from '../utils/validators';
-import toast from 'react-hot-toast';
+import { formatDate } from '../utils/dateUtils';
+import { LIMITS, PASSWORD_MESSAGE, profileSchema, validateForm, validatePassword } from '../utils/validators';
+import type { AppTag, AppUser } from '../types';
+
+type Tab = 'profile' | 'security' | 'notifications';
+
+const TABS: { id: Tab; name: string; icon: typeof UserIcon }[] = [
+  { id: 'profile', name: 'Profile', icon: UserIcon },
+  { id: 'security', name: 'Security', icon: KeyIcon },
+  { id: 'notifications', name: 'Notifications', icon: BellIcon },
+];
+
+const emptyPasswords = { current_password: '', new_password: '', confirm_password: '' };
+
+const profileFormFrom = (user: AppUser | null) => ({
+  name: user?.name ?? '',
+  username: user?.username ?? '',
+  bio: user?.bio ?? '',
+  profile_image_url: user?.profile_image_url ?? '',
+});
 
 const Profile = () => {
   const { user, updateProfile, changePassword } = useAuth();
-  const [activeTab, setActiveTab] = useState('profile');
+  const [activeTab, setActiveTab] = useState<Tab>('profile');
   const [isEditing, setIsEditing] = useState(false);
-  const [profileData, setProfileData] = useState({
-    name: '',
-    username: '',
-    email: '',
-    bio: '',
-    profile_image_url: ''
-  });
-  const [passwordData, setPasswordData] = useState({
-    current_password: '',
-    new_password: '',
-    confirm_password: ''
-  });
-  const [selectedInterests, setSelectedInterests] = useState<any[]>([]);
-  const [availableTags, setAvailableTags] = useState<any[]>([]);
+  const [profileData, setProfileData] = useState(profileFormFrom(user));
+  const [interests, setInterests] = useState<AppTag[]>(user?.interests ?? []);
+  const [passwordData, setPasswordData] = useState(emptyPasswords);
+  const [availableTags, setAvailableTags] = useState<AppTag[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isUpdating, setIsUpdating] = useState(false);
 
-  const {
-    data: tagsData,
-    loading: tagsLoading,
-    execute: fetchTags
-  } = useApi(tagsApi.getAllTags);
-
   useEffect(() => {
-    if (user) {
-      setProfileData({
-        name: user.name || '',
-        username: user.username || '',
-        email: user.email || '',
-        bio: user.bio || '',
-        profile_image_url: user.profile_image_url || ''
-      });
-
-      const userPreferences = user.preferences || (user as any).interests || [];
-
-      if (userPreferences.length > 0 && typeof userPreferences[0] === 'string') {
-        setSelectedInterests(userPreferences);
-      } else {
-        setSelectedInterests(userPreferences);
-      }
-    }
-  }, [user]);
-
-  useEffect(() => {
-    fetchTags();
+    tagsApi.getAllTags().then(setAvailableTags).catch(() => setAvailableTags([]));
   }, []);
 
-  useEffect(() => {
-    if ((tagsData as any)?.tags) {
-      setAvailableTags((tagsData as any).tags);
-
-      if (selectedInterests.length > 0 && typeof selectedInterests[0] === 'string') {
-        const tagObjects = selectedInterests
-          .map(tagName => (tagsData as any).tags.find((tag: any) => tag.name === tagName))
-          .filter(tag => tag !== undefined);
-        setSelectedInterests(tagObjects);
-      }
-    }
-  }, [tagsData, selectedInterests]);
+  const startEditing = () => {
+    setProfileData(profileFormFrom(user));
+    setInterests(user?.interests ?? []);
+    setErrors({});
+    setIsEditing(true);
+  };
 
   const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setProfileData(prev => ({ ...prev, [name]: value }));
-
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
-    }
+    setProfileData((prev) => ({ ...prev, [name]: value }));
+    setErrors((prev) => ({ ...prev, [name]: '' }));
   };
 
-  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setPasswordData(prev => ({ ...prev, [name]: value }));
+  const toggleInterest = (tag: AppTag) =>
+    setInterests((prev) =>
+      prev.some((t) => t.tag_id === tag.tag_id) ? prev.filter((t) => t.tag_id !== tag.tag_id) : [...prev, tag]
+    );
 
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
-    }
-  };
-
-  const handleInterestToggle = (tag: any) => {
-    setSelectedInterests(prev => {
-      const isSelected = prev.find(t => (t.tag_id || t.id) === (tag.tag_id || tag.id));
-      if (isSelected) {
-        return prev.filter(t => (t.tag_id || t.id) !== (tag.tag_id || tag.id));
-      } else {
-        return [...prev, tag];
-      }
-    });
-  };
-
-  const handleProfileSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const handleProfileSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     const validation = validateForm(profileData, profileSchema);
     if (!validation.isValid) {
-      setErrors(validation.errors as any as Record<string, string>);
+      setErrors(validation.errors);
       return;
     }
-
-    try {
-      setIsUpdating(true);
-
-      const updateData = {
-        name: profileData.name,
-        username: profileData.username,
-        bio: profileData.bio,
-        profile_image_url: profileData.profile_image_url.trim(),
-        preferences: selectedInterests.map(tag => tag.name)
-      };
-
-      const result = await updateProfile(updateData);
-      if (result.success) {
-        setIsEditing(false);
-      }
-    } catch (error) {
-      console.error('Profile update error:', error);
-    } finally {
-      setIsUpdating(false);
-    }
+    setIsUpdating(true);
+    const result = await updateProfile({
+      name: profileData.name.trim(),
+      username: profileData.username,
+      bio: profileData.bio,
+      profile_image_url: profileData.profile_image_url.trim(),
+      interest_tag_ids: interests.map((tag) => tag.tag_id),
+    });
+    setIsUpdating(false);
+    if (result.success) setIsEditing(false);
   };
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    // Same password rules as registration and the backend
     if (!validatePassword(passwordData.new_password)) {
       setErrors({ new_password: PASSWORD_MESSAGE });
       return;
@@ -151,403 +88,228 @@ const Profile = () => {
       setErrors({ confirm_password: 'Passwords do not match' });
       return;
     }
-
-    try {
-      setIsUpdating(true);
-
-      const result = await changePassword({
-        current_password: passwordData.current_password,
-        new_password: passwordData.new_password
-      });
-
-      if (result.success) {
-        setPasswordData({
-          current_password: '',
-          new_password: '',
-          confirm_password: ''
-        });
-        toast.success('Password changed successfully!');
-      }
-    } catch (error) {
-      toast.error('Failed to change password');
-    } finally {
-      setIsUpdating(false);
-    }
+    setIsUpdating(true);
+    const result = await changePassword({
+      current_password: passwordData.current_password,
+      new_password: passwordData.new_password,
+    });
+    setIsUpdating(false);
+    if (result.success) setPasswordData(emptyPasswords);
   };
 
-  const tabs = [
-    { id: 'profile', name: 'Profile', icon: UserIcon },
-    { id: 'security', name: 'Security', icon: KeyIcon },
-    { id: 'notifications', name: 'Notifications', icon: BellIcon }
-  ];
+  const fieldError = (field: string) =>
+    errors[field] ? <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors[field]}</p> : null;
+  const readOnlyClass = !isEditing ? 'bg-gray-50 dark:bg-gray-700' : '';
+  const unselectedTags = availableTags.filter((tag) => !interests.some((t) => t.tag_id === tag.tag_id));
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Profile
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Manage your profile and preferences
-          </p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Profile</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-2">Manage your profile, interests and password</p>
         </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-8">
           <div className="flex items-center gap-6">
-            <div className="relative">
-              <div className="w-24 h-24 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-                {isEditing && profileData.profile_image_url ? (
-                  <img src={profileData.profile_image_url} alt="Profile preview" className="w-full h-full object-cover" />
-                ) : user?.profile_image_url ? (
-                  <img src={user.profile_image_url} alt="Profile" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <UserIcon className="h-12 w-12 text-gray-400" />
-                  </div>
-                )}
-              </div>
+            <div className="w-24 h-24 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden flex-shrink-0">
+              {(isEditing ? profileData.profile_image_url : user?.profile_image_url) ? (
+                <img
+                  src={isEditing ? profileData.profile_image_url : user?.profile_image_url ?? ''}
+                  alt="Profile"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <UserIcon className="h-12 w-12 text-gray-400" />
+                </div>
+              )}
             </div>
-
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-2">
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {user?.name || 'User'}
-                </h2>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{user?.name}</h2>
                 {!isEditing && (
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                  >
+                  <button onClick={startEditing} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" aria-label="Edit profile">
                     <PencilIcon className="h-4 w-4" />
                   </button>
                 )}
               </div>
               <p className="text-gray-600 dark:text-gray-400 mb-2">@{user?.username}</p>
-              {user?.bio && (
-                <p className="text-gray-700 dark:text-gray-300 mb-3">{user.bio}</p>
-              )}
-
-              <div className="flex flex-wrap gap-4 text-sm text-gray-600 dark:text-gray-400">
-                <div className="flex items-center gap-1">
+              {user?.bio && <p className="text-gray-700 dark:text-gray-300 mb-3">{user.bio}</p>}
+              {user?.created_at && (
+                <p className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400">
                   <CalendarDaysIcon className="h-4 w-4" />
-                  Joined {new Date(user?.created_at || Date.now()).toLocaleDateString()}
-                </div>
-              </div>
+                  Joined {formatDate(user.created_at)}
+                </p>
+              )}
             </div>
           </div>
 
-          {((user?.preferences && user.preferences.length > 0) || ((user as any)?.interests && (user as any).interests.length > 0)) && (
+          {user && user.interests.length > 0 && (
             <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
               <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-3">Interests</h3>
               <div className="flex flex-wrap gap-2">
-                {(user?.preferences || (user as any)?.interests || []).slice(0, 10).map((interest: any, index: number) => {
-                  const tagData = typeof interest === 'string'
-                    ? { name: interest, tag_id: index }
-                    : interest;
-                  return <TagChip key={index} tag={tagData} size="sm" />;
-                })}
-                {(user?.preferences || (user as any)?.interests || []).length > 10 && (
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    +{(user?.preferences || (user as any)?.interests).length - 10} more
-                  </span>
-                )}
+                {user.interests.map((tag) => <TagChip key={tag.tag_id} tag={tag} size="sm" />)}
               </div>
             </div>
           )}
         </div>
 
-        <div className="mb-8">
-          <div className="sm:hidden">
-            <select
-              value={activeTab}
-              onChange={(e) => setActiveTab(e.target.value)}
-              className="block w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:border-blue-500 focus:ring-blue-500"
+        <nav className="flex space-x-8 mb-8" aria-label="Profile sections">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === tab.id
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+              }`}
             >
-              {tabs.map((tab) => (
-                <option key={tab.id} value={tab.id}>
-                  {tab.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="hidden sm:block">
-            <nav className="flex space-x-8" aria-label="Tabs">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-                  }`}
-                >
-                  <tab.icon className="h-5 w-5" />
-                  {tab.name}
-                </button>
-              ))}
-            </nav>
-          </div>
-        </div>
+              <tab.icon className="h-5 w-5" />
+              {tab.name}
+            </button>
+          ))}
+        </nav>
 
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md">
           {activeTab === 'profile' && (
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Profile Information
-                </h3>
+            <form onSubmit={handleProfileSubmit} className="p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Profile Information</h3>
                 {isEditing ? (
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => {
-                        setIsEditing(false);
-                        setErrors({});
-                        setProfileData({
-                          name: user?.name || '',
-                          username: user?.username || '',
-                          email: user?.email || '',
-                          bio: user?.bio || '',
-                          profile_image_url: user?.profile_image_url || ''
-                        });
-                      }}
+                      type="button"
+                      onClick={() => { setIsEditing(false); setErrors({}); }}
                       className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                     >
                       Cancel
                     </button>
-                    <LoadingButton
-                      onClick={handleProfileSubmit as any}
-                      loading={isUpdating}
-                      className="btn-primary"
-                    >
-                      Save Changes
-                    </LoadingButton>
+                    <LoadingButton type="submit" loading={isUpdating} className="btn-primary">Save Changes</LoadingButton>
                   </div>
                 ) : (
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="btn-secondary"
-                  >
-                    Edit Profile
-                  </button>
+                  <button type="button" onClick={startEditing} className="btn-secondary">Edit Profile</button>
                 )}
               </div>
 
-              <form onSubmit={handleProfileSubmit} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Name
-                    </label>
-                    <input
-                      type="text"
-                      name="name"
-                      value={profileData.name}
-                      onChange={handleProfileChange}
-                      disabled={!isEditing}
-                      className={`input-field ${!isEditing ? 'bg-gray-50 dark:bg-gray-700' : ''} ${errors.name ? 'border-red-500' : ''}`}
-                    />
-                    {errors.name && <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.name}</p>}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Username
-                    </label>
-                    <input
-                      type="text"
-                      name="username"
-                      value={profileData.username}
-                      onChange={handleProfileChange}
-                      disabled={!isEditing}
-                      className={`input-field ${!isEditing ? 'bg-gray-50 dark:bg-gray-700' : ''} ${errors.username ? 'border-red-500' : ''}`}
-                    />
-                    {errors.username && <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.username}</p>}
-                  </div>
-                </div>
-
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Email
-                  </label>
-                  {/* Email is the login identity and can't be changed here */}
-                  <input
-                    type="email"
-                    name="email"
-                    value={profileData.email}
-                    disabled
-                    className="input-field bg-gray-50 dark:bg-gray-700"
-                  />
-                  {isEditing && (
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Email can't be changed.</p>
-                  )}
+                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+                  <input id="name" type="text" name="name" maxLength={LIMITS.name}
+                    value={isEditing ? profileData.name : user?.name ?? ''} onChange={handleProfileChange}
+                    disabled={!isEditing} className={`input-field ${readOnlyClass} ${errors.name ? 'border-red-500' : ''}`} />
+                  {fieldError('name')}
                 </div>
-
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Bio
-                  </label>
-                  <textarea
-                    name="bio"
-                    rows={3}
-                    value={profileData.bio}
-                    onChange={handleProfileChange}
-                    disabled={!isEditing}
-                    className={`input-field ${!isEditing ? 'bg-gray-50 dark:bg-gray-700' : ''} ${errors.bio ? 'border-red-500' : ''}`}
-                    placeholder="Tell us about yourself"
-                  />
-                  {errors.bio && <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.bio}</p>}
+                  <label htmlFor="username" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Username</label>
+                  <input id="username" type="text" name="username"
+                    value={isEditing ? profileData.username : user?.username ?? ''} onChange={handleProfileChange}
+                    disabled={!isEditing} className={`input-field ${readOnlyClass} ${errors.username ? 'border-red-500' : ''}`} />
+                  {fieldError('username')}
                 </div>
+              </div>
 
-                {isEditing && (
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+                <input id="email" type="email" value={user?.email ?? ''} disabled className="input-field bg-gray-50 dark:bg-gray-700" />
+                {isEditing && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Email is your sign-in identity and can't be changed.</p>}
+              </div>
+
+              <div>
+                <label htmlFor="bio" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Bio</label>
+                <textarea id="bio" name="bio" rows={3} maxLength={LIMITS.bio}
+                  value={isEditing ? profileData.bio : user?.bio ?? ''} onChange={handleProfileChange}
+                  disabled={!isEditing} className={`input-field ${readOnlyClass} ${errors.bio ? 'border-red-500' : ''}`}
+                  placeholder="Tell us about yourself" />
+                {fieldError('bio')}
+              </div>
+
+              {isEditing && (
+                <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Profile image URL
-                    </label>
-                    <input
-                      type="url"
-                      name="profile_image_url"
-                      value={profileData.profile_image_url}
-                      onChange={handleProfileChange}
+                    <label htmlFor="profile_image_url" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Profile image URL</label>
+                    <input id="profile_image_url" type="url" name="profile_image_url" maxLength={LIMITS.url}
+                      value={profileData.profile_image_url} onChange={handleProfileChange}
                       className={`input-field ${errors.profile_image_url ? 'border-red-500' : ''}`}
-                      placeholder="https://example.com/photo.jpg"
-                    />
-                    {errors.profile_image_url && <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.profile_image_url}</p>}
+                      placeholder="https://example.com/photo.jpg" />
+                    {fieldError('profile_image_url')}
                   </div>
-                )}
 
-                {isEditing && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Interests
-                    </label>
-
-                    {selectedInterests.length > 0 && (
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Interests</label>
+                    {interests.length > 0 && (
                       <div className="flex flex-wrap gap-2 mb-3">
-                        {selectedInterests.map(tag => (
-                          <TagChip
-                            key={tag.tag_id || tag.id}
-                            tag={tag}
-                            removable
-                            onRemove={() => handleInterestToggle(tag)}
-                          />
+                        {interests.map((tag) => (
+                          <TagChip key={tag.tag_id} tag={tag} removable onRemove={() => toggleInterest(tag)} />
                         ))}
                       </div>
                     )}
-
-                    {!tagsLoading && availableTags.length > 0 && (
-                      <div className="max-h-40 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg p-3">
-                        <div className="flex flex-wrap gap-2">
-                          {availableTags.filter(tag => !selectedInterests.find(st => (st.tag_id || st.id) === (tag.tag_id || tag.id))).map(tag => (
-                            <button
-                              key={tag.tag_id || tag.id}
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleInterestToggle(tag);
-                              }}
-                              className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-blue-100 hover:text-blue-700 dark:hover:bg-blue-800 dark:hover:text-blue-200 hover:border-blue-300 dark:hover:border-blue-600 transition-colors"
-                              title={`Click to add ${tag.name} tag`}
-                            >
-                              {tag.name}
-                            </button>
-                          ))}
-                          {availableTags.filter(tag => !selectedInterests.find(st => (st.tag_id || st.id) === (tag.tag_id || tag.id))).length === 0 && (
-                            <p className="text-gray-500 dark:text-gray-400 text-sm italic">
-                              All available tags have been selected
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    )}
+                    <div className="max-h-40 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg p-3 flex flex-wrap gap-2">
+                      {unselectedTags.map((tag) => (
+                        <button
+                          key={tag.tag_id}
+                          type="button"
+                          onClick={() => toggleInterest(tag)}
+                          className="px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-blue-100 hover:text-blue-700 dark:hover:bg-blue-800 dark:hover:text-blue-200 transition-colors"
+                        >
+                          {tag.name}
+                        </button>
+                      ))}
+                      {unselectedTags.length === 0 && (
+                        <p className="text-gray-500 dark:text-gray-400 text-sm italic">
+                          {availableTags.length === 0 ? 'No tags available' : 'All tags selected'}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                )}
-              </form>
-            </div>
+                </>
+              )}
+            </form>
           )}
 
           {activeTab === 'security' && (
             <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-                Change Password
-              </h3>
-
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Change Password</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">Changing your password signs you out on every other device.</p>
               <form onSubmit={handlePasswordSubmit} className="space-y-6 max-w-md">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Current Password
-                  </label>
-                  <input
-                    type="password"
-                    name="current_password"
-                    value={passwordData.current_password}
-                    onChange={handlePasswordChange}
-                    className={`input-field ${errors.current_password ? 'border-red-500' : ''}`}
-                  />
-                  {errors.current_password && <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.current_password}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    New Password
-                  </label>
-                  <input
-                    type="password"
-                    name="new_password"
-                    value={passwordData.new_password}
-                    onChange={handlePasswordChange}
-                    className={`input-field ${errors.new_password ? 'border-red-500' : ''}`}
-                    placeholder="Must contain uppercase, lowercase, number, and special character"
-                  />
-                  {errors.new_password && <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.new_password}</p>}
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Password must be at least 8 characters with uppercase, lowercase, number, and special character
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Confirm New Password
-                  </label>
-                  <input
-                    type="password"
-                    name="confirm_password"
-                    value={passwordData.confirm_password}
-                    onChange={handlePasswordChange}
-                    className={`input-field ${errors.confirm_password ? 'border-red-500' : ''}`}
-                  />
-                  {errors.confirm_password && <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.confirm_password}</p>}
-                </div>
-
-                <LoadingButton
-                  type="submit"
-                  loading={isUpdating}
-                  className="btn-primary"
-                >
-                  Change Password
-                </LoadingButton>
+                {([
+                  ['current_password', 'Current Password'],
+                  ['new_password', 'New Password'],
+                  ['confirm_password', 'Confirm New Password'],
+                ] as const).map(([field, label]) => (
+                  <div key={field}>
+                    <label htmlFor={field} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
+                    <input
+                      id={field}
+                      type="password"
+                      name={field}
+                      value={passwordData[field]}
+                      onChange={(e) => {
+                        setPasswordData((prev) => ({ ...prev, [field]: e.target.value }));
+                        setErrors((prev) => ({ ...prev, [field]: '' }));
+                      }}
+                      className={`input-field ${errors[field] ? 'border-red-500' : ''}`}
+                    />
+                    {fieldError(field)}
+                  </div>
+                ))}
+                <p className="text-xs text-gray-500 dark:text-gray-400">{PASSWORD_MESSAGE}</p>
+                <LoadingButton type="submit" loading={isUpdating} className="btn-primary">Change Password</LoadingButton>
               </form>
             </div>
           )}
 
           {activeTab === 'notifications' && (
             <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                Notifications
-              </h3>
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                PlanPal sends in-app notifications (the bell in the navbar) when:
-              </p>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Notifications</h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-4">PlanPal sends in-app notifications (the bell in the navbar) when:</p>
               <ul className="list-disc pl-5 space-y-1 text-gray-600 dark:text-gray-400 mb-6">
-                <li>someone joins or leaves an event you organize</li>
+                <li>someone joins or leaves an event you organise</li>
                 <li>an event you joined is updated or cancelled</li>
-                <li>an event you joined starts within 24 hours</li>
+                <li>an event you organise or joined starts within 24 hours</li>
               </ul>
-              <Link to="/notifications" className="btn-primary">
-                View notifications
-              </Link>
+              <Link to="/notifications" className="btn-primary">View notifications</Link>
             </div>
           )}
         </div>

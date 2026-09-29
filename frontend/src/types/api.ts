@@ -1,11 +1,8 @@
 /**
- * types/api.ts - API response utility types
- *
- * Why: Provides ContextResponse<T> discriminated union for every API/context
- * return, and standard API error shape derived from backend Flask routes.
+ * types/api.ts - Shared shapes of API responses and context results.
  */
 
-/** Discriminated union for every API/context return */
+/** Result of an AuthContext action. */
 export type ContextResponse<T> =
   | { success: true; data: T }
   | { success: false; error: string };
@@ -19,10 +16,8 @@ export interface Pagination {
 }
 
 /**
- * Standard API error shape from backend: every error response is
- * { success: false, error: "<message>" } (route errors, 404/405/429/500, JWT errors).
- * The `message` key only appears in success responses (e.g., 'Login successful').
- * Use getApiErrorMessage() in utils/helpers.ts to read it.
+ * Body of every API error response: { success: false, error: "<message>" }.
+ * Read it with getApiErrorMessage() in utils/helpers.ts.
  */
 export interface ApiError {
   success?: false;

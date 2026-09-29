@@ -21,10 +21,10 @@ def test_readiness_check(system_client):
     assert resp.status_code == 200
     assert resp.get_json()['status'] == 'ready'
 
-def test_version_check(system_client):
+def test_version_endpoint_removed(system_client):
+    # The API exposes only the probes the hosting platform uses
     resp = system_client.get('/api/system/version')
-    assert resp.status_code == 200
-    assert 'version' in resp.get_json()
+    assert resp.status_code == 404
 
 def test_error_handlers(system_client):
     resp = system_client.get('/api/this_route_does_not_exist')

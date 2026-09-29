@@ -1,24 +1,24 @@
 /**
- * user.schema.ts - Zod schema for User domain model
- *
- * Why: Runtime validation of User data from backend API responses.
- * Shape derived from backend User.to_dict() in models/__init__.py.
+ * user.schema.ts - Shape of a user as returned by the API (backend User.to_dict()).
+ * email is only present on your own profile.
  */
 
 import { z } from 'zod';
+import { AppTagSchema } from './tag.schema';
 
 export const UserRole = z.enum(['user', 'admin']);
 
 export const AppUserSchema = z.object({
   user_id: z.uuid(),
   name: z.string(),
-  email: z.email(),
+  email: z.email().optional(),
   username: z.string(),
   bio: z.string().nullable(),
   profile_image_url: z.string().nullable(),
-  preferences: z.array(z.string()),
+  interests: z.array(AppTagSchema),
   role: UserRole,
-  is_active: z.boolean(),
   created_at: z.iso.datetime(),
   updated_at: z.iso.datetime(),
 });
+
+export type UserRole = z.infer<typeof UserRole>;

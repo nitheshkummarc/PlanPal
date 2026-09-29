@@ -1,53 +1,38 @@
 """
-system.py - System Health and Information Routes
+Health probes for the hosting platform (not used by the frontend).
 
-Why: Provides system health checks and version info for monitoring
-
-Routes/Functions:
-- health_check(): GET /api/system/health - Database connectivity test
-- get_version(): GET /api/system/version - API version and build date
+- GET /api/system/health  Liveness: 200 while the process is running
+- GET /api/system/ready   Readiness: 200 when the database answers, 503 otherwise
+                          (Render's healthCheckPath)
 """
 
-from flask import Blueprint, jsonify, current_app
-from app import db
-from app.utils.responses import error_response
 from datetime import datetime, timezone
+
+from flask import Blueprint, current_app
 from sqlalchemy import text
+
+from app import db
+from app.utils.responses import error_response, success_response
 
 system_bp = Blueprint('system', __name__)
 
+
+def _now():
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+
 @system_bp.route('/health', methods=['GET'])
 def health_check():
-    """Liveness probe — always 200 if the process is running."""
-    return jsonify({
-        'status': 'healthy',
-        'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-    }), 200
+    return success_response({'status': 'healthy', 'timestamp': _now()})
+
 
 @system_bp.route('/ready', methods=['GET'])
 def readiness_check():
-    """Readiness probe — checks DB connectivity."""
     try:
         db.session.execute(text('SELECT 1'))
-        return jsonify({
-            'status': 'ready',
-            'database': 'connected',
-            'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-        }), 200
-    except Exception as e:
-        # Log details server-side; don't expose DB error text to callers
-        current_app.logger.error('Readiness check failed: %s', e)
-        return jsonify({
-            'status': 'not_ready',
-            'database': 'disconnected',
-            'error': 'Database unavailable'
-        }), 503
-
-@system_bp.route('/version', methods=['GET'])
-def get_version():
-    """API version information"""
-    return jsonify({
-        'version': '1.0.0',
-        'api_name': 'PlanPal API',
-        'build_date': '2025-09-11'
-    }), 200
+    except Exception:
+        # Log the details; do not expose database errors to callers
+        current_app.logger.exception('Readiness check failed')
+        db.session.rollback()
+        return error_response('Database unavailable', 503)
+    return success_response({'status': 'ready', 'database': 'connected', 'timestamp': _now()})

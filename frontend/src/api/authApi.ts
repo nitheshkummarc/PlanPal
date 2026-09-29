@@ -1,64 +1,53 @@
 /**
- * authApi.ts - Authentication API Service
- *
- * Why: Handles all auth-related HTTP requests to backend
+ * authApi.ts - Account endpoints (/api/auth).
+ * Token refresh is handled by the axios interceptor (services/axiosInstance.ts).
  */
 
 import axiosInstance from '../services/axiosInstance';
 import { tokenService } from '../services/tokenService';
 import type { AppUser } from '../types';
 
-interface LoginCredentials {
+export interface LoginCredentials {
   email: string;
   password: string;
 }
 
-interface RegisterData {
+export interface RegisterData {
   name: string;
   email: string;
   username: string;
   password: string;
   bio?: string;
   profile_image_url?: string;
-  preferences?: string[];
+  interest_tag_ids?: string[];
 }
 
-interface AuthResponse {
-  message: string;
-  access_token: string;
-  refresh_token: string;
-  user: AppUser;
-}
-
-interface ProfileResponse {
-  user: AppUser;
-}
-
-interface ProfileUpdateData {
+export interface ProfileUpdateData {
   name?: string;
   username?: string;
   bio?: string;
   profile_image_url?: string;
-  preferences?: string[];
+  interest_tag_ids?: string[];
 }
 
-interface ProfileUpdateResponse {
-  message: string;
-  user: AppUser;
-}
-
-interface ChangePasswordData {
+export interface ChangePasswordData {
   current_password: string;
   new_password: string;
 }
 
-interface MessageResponse {
+interface TokenPair {
+  access_token: string;
+  refresh_token: string;
+}
+
+interface AuthResponse extends TokenPair {
   message: string;
+  user: AppUser;
 }
 
 export const authApi = {
-  register: async (userData: RegisterData): Promise<AuthResponse> => {
-    const response = await axiosInstance.post<AuthResponse>('/api/auth/register', userData);
+  register: async (data: RegisterData): Promise<AuthResponse> => {
+    const response = await axiosInstance.post<AuthResponse>('/api/auth/register', data);
     return response.data;
   },
 
@@ -67,27 +56,24 @@ export const authApi = {
     return response.data;
   },
 
-  // Revokes the access token (sent in the header) and the refresh token (sent in the body).
-  // Token refresh itself is handled by the axios interceptor (services/axiosInstance.ts).
-  logout: async (): Promise<MessageResponse> => {
-    const response = await axiosInstance.post<MessageResponse>('/api/auth/logout', {
-      refresh_token: tokenService.getRefreshToken()
-    });
+  /** Revokes the access token (header) and the refresh token (body). */
+  logout: async (): Promise<void> => {
+    await axiosInstance.post('/api/auth/logout', { refresh_token: tokenService.getRefreshToken() });
+  },
+
+  getProfile: async (): Promise<{ user: AppUser }> => {
+    const response = await axiosInstance.get<{ user: AppUser }>('/api/auth/profile');
     return response.data;
   },
 
-  getProfile: async (): Promise<ProfileResponse> => {
-    const response = await axiosInstance.get<ProfileResponse>('/api/auth/profile');
+  updateProfile: async (data: ProfileUpdateData): Promise<{ message: string; user: AppUser }> => {
+    const response = await axiosInstance.put<{ message: string; user: AppUser }>('/api/auth/profile', data);
     return response.data;
   },
 
-  updateProfile: async (profileData: ProfileUpdateData): Promise<ProfileUpdateResponse> => {
-    const response = await axiosInstance.put<ProfileUpdateResponse>('/api/auth/profile', profileData);
-    return response.data;
-  },
-
-  changePassword: async (passwordData: ChangePasswordData): Promise<MessageResponse> => {
-    const response = await axiosInstance.post<MessageResponse>('/api/auth/change-password', passwordData);
+  /** Ends every other session; the response carries new tokens for this one. */
+  changePassword: async (data: ChangePasswordData): Promise<TokenPair & { message: string }> => {
+    const response = await axiosInstance.post<TokenPair & { message: string }>('/api/auth/change-password', data);
     return response.data;
   },
 };

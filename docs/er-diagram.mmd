@@ -1,0 +1,87 @@
+---
+title: PlanPal Entity-Relationship Diagram
+---
+erDiagram
+    users ||--o{ events : "organises"
+    users ||--o{ participations : "joins"
+    events ||--o{ participations : "has participants"
+    users ||--o{ notifications : "receives"
+    events |o--o{ notifications : "about (SET NULL on delete)"
+    users ||--o{ user_tags : "has interest"
+    tags ||--o{ user_tags : "is interest of"
+    events ||--o{ event_tags : "tagged with"
+    tags ||--o{ event_tags : "tags"
+
+    users {
+        uuid user_id PK
+        varchar(100) name
+        varchar(255) email UK "stored in lower case"
+        varchar(100) username UK "unique ignoring case"
+        text password_hash
+        text bio
+        varchar(500) profile_image_url
+        varchar(20) role "user | admin"
+        boolean is_active
+        int token_version
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    events {
+        uuid event_id PK
+        uuid posted_by FK
+        varchar(200) title
+        text description
+        timestamptz timestamp
+        varchar(200) place
+        varchar(200) location
+        varchar(100) city
+        varchar(100) state
+        boolean is_paid
+        numeric price "(10,2) only for paid events"
+        int max_participants "null = no limit"
+        int current_participants "cached count"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    participations {
+        uuid participation_id PK
+        uuid event_id FK
+        uuid user_id FK
+        varchar(20) status "interested | going"
+        timestamptz joined_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    notifications {
+        uuid notification_id PK
+        uuid user_id FK
+        uuid event_id FK "nullable"
+        varchar(50) type
+        varchar(200) title
+        text message
+        boolean is_read
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    tags {
+        uuid tag_id PK
+        varchar(50) name UK "unique ignoring case"
+        text description
+        varchar(7) color "#RRGGBB"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    user_tags {
+        uuid user_id PK, FK
+        uuid tag_id PK, FK
+        timestamptz created_at
+    }
+    event_tags {
+        uuid event_id PK, FK
+        uuid tag_id PK, FK
+        timestamptz created_at
+    }
+    revoked_tokens {
+        varchar(36) jti PK
+        timestamptz expires_at
+    }

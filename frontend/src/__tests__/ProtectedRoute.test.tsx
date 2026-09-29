@@ -4,7 +4,6 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import ProtectedRoute from '../components/common/ProtectedRoute';
 import * as AuthContextModule from '../context/AuthContext';
 
-// Mock useAuth
 vi.mock('../context/AuthContext', () => ({
   useAuth: vi.fn(),
 }));
@@ -29,7 +28,7 @@ describe('ProtectedRoute', () => {
     vi.spyOn(AuthContextModule, 'useAuth').mockReturnValue({
       loading: true,
       isAuthenticated: false,
-    } as any);
+    } as ReturnType<typeof AuthContextModule.useAuth>);
 
     renderWithRouter(
       <ProtectedRoute>
@@ -44,7 +43,7 @@ describe('ProtectedRoute', () => {
     vi.spyOn(AuthContextModule, 'useAuth').mockReturnValue({
       loading: false,
       isAuthenticated: false,
-    } as any);
+    } as ReturnType<typeof AuthContextModule.useAuth>);
 
     renderWithRouter(
       <ProtectedRoute>
@@ -60,7 +59,7 @@ describe('ProtectedRoute', () => {
     vi.spyOn(AuthContextModule, 'useAuth').mockReturnValue({
       loading: false,
       isAuthenticated: true,
-    } as any);
+    } as ReturnType<typeof AuthContextModule.useAuth>);
 
     renderWithRouter(
       <ProtectedRoute>

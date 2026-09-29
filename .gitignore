@@ -74,3 +74,13 @@ backend/uploads/
 .DS_Store
 Thumbs.db
 desktop.ini
+.agents
+# Working notes kept locally; docs/ in the repository holds the reference documentation only
+docs/DEPENDENCY_AUDIT.md
+docs/FILE_DOCUMENTATION.md
+docs/STATIC_ANALYSIS_REPORT.md
+docs/TEST_SUMMARY.md
+
+# AI assistant tooling (local only)
+.agents/
+skills-lock.json
