@@ -84,3 +84,6 @@ docs/TEST_SUMMARY.md
 # AI assistant tooling (local only)
 .agents/
 skills-lock.json
+
+# Personal interview preparation notes
+INTERVIEW_PREP.md
